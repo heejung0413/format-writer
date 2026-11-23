@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ResultPanel } from "@/components/ResultPanel";
+import { mockPlatform } from "../platform";
 
 function setup(overrides: Partial<Parameters<typeof ResultPanel>[0]> = {}) {
   const handlers = { onRetry: vi.fn(), onRefine: vi.fn(), onEdit: vi.fn() };
@@ -246,5 +247,138 @@ describe("ResultPanel 편집", () => {
       <ResultPanel output="본문" busy={false} error={null} canRefine={false} saveStatus={null} onRetry={() => {}} onRefine={() => {}} onEdit={() => {}} />,
     );
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+});
+
+describe("ResultPanel 복사 단축키", () => {
+  function press(init: KeyboardEventInit): boolean {
+    return fireEvent.keyDown(window, init);
+  }
+
+  test("Ctrl+Shift+C는 결과를 복사하고 기본 동작을 막고 복사됨을 보여 준다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "Linux x86_64" });
+    setup({ output: "복사할 본문" });
+    let allowed = true;
+    await act(async () => {
+      allowed = press({ key: "C", ctrlKey: true, shiftKey: true });
+    });
+    expect(allowed).toBe(false);
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("복사할 본문");
+    expect(screen.getByRole("button", { name: "복사됨" })).toBeInTheDocument();
+  });
+
+  test("⌘+Shift+C도 같게 동작하고 소문자 c로 와도 복사한다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "MacIntel" });
+    setup({ output: "본문" });
+    await act(async () => {
+      press({ key: "c", metaKey: true, shiftKey: true });
+    });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("본문");
+  });
+
+  test("복사되는 것은 화면의 결과(고친 글)이다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "Linux" });
+    render(<Controlled initial="초안" onEdit={() => {}} />);
+    await userEvent.type(resultBox(), " 수정");
+    await act(async () => {
+      press({ key: "C", ctrlKey: true, shiftKey: true });
+    });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("초안 수정");
+  });
+
+  test.each([
+    ["Shift 없이 Ctrl+C", { key: "c", ctrlKey: true }],
+    ["Ctrl 없이 Shift+C", { key: "C", shiftKey: true }],
+    ["Ctrl+Shift+V", { key: "V", ctrlKey: true, shiftKey: true }],
+    ["Alt가 함께 눌린 경우", { key: "C", ctrlKey: true, shiftKey: true, altKey: true }],
+  ])("%s는 복사하지 않고 기본 동작도 막지 않는다", async (_label, init) => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "Linux" });
+    setup({ output: "본문" });
+    let allowed = false;
+    await act(async () => {
+      allowed = press(init);
+    });
+    expect(allowed).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  test("작성 중이거나 결과가 없으면 복사하지 않고 기본 동작을 막지 않는다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "Linux" });
+    const busy = render(<ResultPanel output="쓰는 중" busy error={null} canRefine={false} onRetry={() => {}} onRefine={() => {}} onEdit={() => {}} />);
+    expect(press({ key: "C", ctrlKey: true, shiftKey: true })).toBe(true);
+    busy.unmount();
+    setup({ output: "" });
+    expect(press({ key: "C", ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  test("화면에서 사라지면(unmount) 단축키 처리기도 함께 없어진다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "Linux" });
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const view = render(<ResultPanel output="본문" busy={false} error={null} canRefine={false} onRetry={() => {}} onRefine={() => {}} onEdit={() => {}} />);
+    const added = add.mock.calls.filter(([type]) => type === "keydown");
+    expect(added).toHaveLength(1);
+    view.unmount();
+    expect(remove.mock.calls.filter(([type, fn]) => type === "keydown" && fn === added[0][1])).toHaveLength(1);
+    expect(press({ key: "C", ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  test("다듬기 입력 칸에서도 Ctrl+Shift+C는 복사한다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "Linux" });
+    setup({ output: "본문", canRefine: true });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByPlaceholderText(refinePlaceholder), { key: "C", ctrlKey: true, shiftKey: true });
+    });
+    expect(writeText).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResultPanel 다듬기 입력의 Ctrl/⌘+Enter", () => {
+  test("Ctrl+Enter나 ⌘+Enter는 다듬기를 제출하지 않는다(작성하기 단축키에 양보)", () => {
+    const h = setup({ output: "본문", canRefine: true });
+    const input = screen.getByPlaceholderText(refinePlaceholder);
+    fireEvent.change(input, { target: { value: "지시" } });
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    expect(h.onRefine).not.toHaveBeenCalled();
+    expect(input).toHaveValue("지시");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(h.onRefine).toHaveBeenCalledExactlyOnceWith("지시");
+  });
+});
+
+describe("ResultPanel 단축키 표시", () => {
+  test("macOS에서는 복사 버튼에 ⌘⇧C를 aria-hidden으로 표시하고 접근성 이름은 복사 그대로다", () => {
+    mockPlatform("MacIntel");
+    setup({ output: "본문" });
+    const button = screen.getByRole("button", { name: "복사" });
+    const hint = button.querySelector("[aria-hidden='true']");
+    expect(hint).toHaveTextContent("⌘⇧C");
+  });
+
+  test("macOS가 아니면 Ctrl+Shift+C를 표시한다", () => {
+    mockPlatform("Win32");
+    setup({ output: "본문" });
+    const hint = screen.getByRole("button", { name: "복사" }).querySelector("[aria-hidden='true']");
+    expect(hint).toHaveTextContent("Ctrl+Shift+C");
+  });
+
+  test("복사됨 상태에서는 단축키 표시 없이 복사됨만 보인다", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) }, platform: "Win32" });
+    setup({ output: "본문" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "복사" }));
+    });
+    const done = screen.getByRole("button", { name: "복사됨" });
+    expect(done.querySelector("[aria-hidden]")).toBeNull();
   });
 });

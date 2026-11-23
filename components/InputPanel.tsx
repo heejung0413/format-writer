@@ -1,3 +1,7 @@
+"use client";
+
+import { useIsMac } from "@/lib/platform";
+
 type Props = {
   value: string;
   busy: boolean;
@@ -8,6 +12,7 @@ type Props = {
 };
 
 export function InputPanel({ value, busy, canSubmit, onChange, onSubmit, onStop }: Props) {
+  const mac = useIsMac();
   return (
     <div className="flex flex-col gap-2">
       <textarea
@@ -34,6 +39,9 @@ export function InputPanel({ value, busy, canSubmit, onChange, onSubmit, onStop 
             onClick={onSubmit}
           >
             작성하기
+            <kbd aria-hidden="true" className="ml-2 font-sans text-xs opacity-70">
+              {mac ? "⌘↵" : "Ctrl+Enter"}
+            </kbd>
           </button>
         )}
       </div>

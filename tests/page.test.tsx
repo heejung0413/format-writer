@@ -839,6 +839,9 @@ describe("Home 포맷 관리", () => {
 });
 
 const resultBox = () => screen.getByRole("textbox", { name: "결과" });
+const keyDown = (init: KeyboardEventInit, target: Element | Window = document.body) =>
+  fireEvent.keyDown(target, init);
+const CTRL_ENTER = { key: "Enter", ctrlKey: true };
 const patchesTo = (id: string) => callsTo(`/api/history/${id}`, "PATCH");
 
 /** 작성을 한 번 끝내 기록(h-new-1)을 만든 뒤, 결과 편집의 1초 대기를 가짜 타이머로 제어할 수 있게 준비한다. */
@@ -1188,5 +1191,196 @@ describe("Home 결과 편집과 저장 대기의 정리", () => {
     expect(patchesTo("h-new-1")[0].keepalive).toBe(true);
     await advance(5000);
     expect(patchesTo("h-new-1")).toHaveLength(1);
+  });
+});
+
+describe("Home 단축키", () => {
+  async function ready() {
+    const user = await renderLoaded();
+    await user.type(screen.getByPlaceholderText(inputPlaceholder), "내일 회의를 30분 미룹니다");
+    return user;
+  }
+  const generateCalls = () => callsTo("/api/generate", "POST");
+
+  test.each([
+    ["Ctrl+Enter", { key: "Enter", ctrlKey: true }],
+    ["⌘+Enter", { key: "Enter", metaKey: true }],
+  ])("%s는 입력 칸에 포커스가 있을 때 작성하고 기본 동작을 막는다", async (_label, init) => {
+    await ready();
+    screen.getByPlaceholderText(inputPlaceholder).focus();
+    const allowed = keyDown(init, screen.getByPlaceholderText(inputPlaceholder));
+    expect(allowed).toBe(false);
+    await waitFor(() => expect(resultBox()).toHaveValue("기본 결과"));
+    expect(generateCalls()).toHaveLength(1);
+    expect((generateCalls()[0].body as { messages: ChatMessage[] }).messages).toEqual([
+      { role: "user", content: "내일 회의를 30분 미룹니다" },
+    ]);
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+  });
+
+  test("포커스가 어디에 있든(포맷 선택, 본문) 작성한다", async () => {
+    await ready();
+    screen.getByLabelText("포맷").focus();
+    keyDown(CTRL_ENTER, screen.getByLabelText("포맷"));
+    await waitFor(() => expect(resultBox()).toHaveValue("기본 결과"));
+    expect(generateCalls()).toHaveLength(1);
+  });
+
+  test("결과 칸에서 누르면 새로 작성한다(고친 글은 기록에 먼저 저장된다)", async () => {
+    const user = await ready();
+    await user.click(screen.getByRole("button", { name: "작성하기" }));
+    await waitFor(() => expect(resultBox()).toHaveValue("기본 결과"));
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+    await user.type(resultBox(), "!");
+    keyDown(CTRL_ENTER, resultBox());
+    await waitFor(() => expect(generateCalls()).toHaveLength(2));
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(2));
+    expect(patchesTo("h-new-1")[0].body).toEqual({ output: "기본 결과!" });
+  });
+
+  test("다듬기 입력 칸에서 Ctrl+Enter는 작성만 하고 다듬지 않으며, 그냥 Enter는 다듬는다", async () => {
+    const user = await ready();
+    await user.click(screen.getByRole("button", { name: "작성하기" }));
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+    await screen.findByRole("button", { name: "더 짧게" });
+    const refine = screen.getByPlaceholderText(refinePlaceholder);
+    await user.type(refine, "더 부드럽게");
+
+    backend.generate = () => streamResponse([text("새로 쓴 글"), done]);
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(resultBox()).toHaveValue("새로 쓴 글"));
+    const messages = (generateCalls()[1].body as { messages: ChatMessage[] }).messages;
+    expect(messages).toEqual([{ role: "user", content: "내일 회의를 30분 미룹니다" }]);
+    expect(generateCalls()).toHaveLength(2);
+
+    await screen.findByRole("button", { name: "더 짧게" });
+    backend.generate = () => streamResponse([text("다듬은 글"), done]);
+    await user.type(screen.getByPlaceholderText(refinePlaceholder), "존댓말로{Enter}");
+    await waitFor(() => expect(resultBox()).toHaveValue("다듬은 글"));
+    expect(generateCalls()).toHaveLength(3);
+  });
+
+  test("입력이 비어 있거나 공백뿐이면 아무 일도 없고 기본 동작도 막지 않는다", async () => {
+    const user = await renderLoaded();
+    expect(keyDown(CTRL_ENTER)).toBe(true);
+    await user.type(screen.getByPlaceholderText(inputPlaceholder), "   ");
+    expect(keyDown(CTRL_ENTER)).toBe(true);
+    expect(generateCalls()).toHaveLength(0);
+  });
+
+  test("포맷이 하나도 없으면 작성하지 않는다", async () => {
+    backend.formats = [];
+    render(<Home />);
+    const user = userEvent.setup();
+    await waitFor(() => expect(callsTo("/api/history", "GET")).toHaveLength(1));
+    await user.type(screen.getByPlaceholderText(inputPlaceholder), "메모");
+    keyDown(CTRL_ENTER);
+    expect(generateCalls()).toHaveLength(0);
+  });
+
+  test("작성 중에는 한 번 더 눌러도 새 요청을 보내지 않는다", async () => {
+    let release: () => void = () => {};
+    backend.generate = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(encoder.encode(JSON.stringify(text("쓰는 중")) + "\n"));
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            controller.enqueue(encoder.encode(JSON.stringify(done) + "\n"));
+            controller.close();
+          },
+        }),
+      );
+    await ready();
+    keyDown(CTRL_ENTER);
+    await waitFor(() => expect(resultBox()).toHaveValue("쓰는 중"));
+    expect(keyDown(CTRL_ENTER)).toBe(true);
+    expect(generateCalls()).toHaveLength(1);
+    release();
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+  });
+
+  test("설정 창이 열려 있으면 작성하지 않는다", async () => {
+    const user = await ready();
+    await user.click(screen.getByRole("button", { name: "설정" }));
+    const dialog = await screen.findByRole("dialog", { name: "설정" });
+    expect(keyDown(CTRL_ENTER, dialog)).toBe(true);
+    expect(generateCalls()).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "닫기" }));
+    keyDown(CTRL_ENTER);
+    await waitFor(() => expect(generateCalls()).toHaveLength(1));
+  });
+
+  test("포맷 관리 창이 열려 있으면 작성하지 않는다", async () => {
+    const user = await ready();
+    await user.click(screen.getByRole("button", { name: "포맷 관리" }));
+    const dialog = await screen.findByRole("dialog", { name: "포맷 관리" });
+    expect(keyDown(CTRL_ENTER, dialog)).toBe(true);
+    expect(generateCalls()).toHaveLength(0);
+  });
+
+  test("입력 칸에서 그냥 Enter는 줄바꿈이고 작성하지 않는다", async () => {
+    const user = await renderLoaded();
+    const box = screen.getByPlaceholderText(inputPlaceholder);
+    await user.type(box, "첫 줄{Enter}둘째 줄");
+    expect(box).toHaveValue("첫 줄\n둘째 줄");
+    expect(generateCalls()).toHaveLength(0);
+  });
+
+  test.each([
+    ["Shift가 함께 눌린 경우", { key: "Enter", ctrlKey: true, shiftKey: true }],
+    ["Alt가 함께 눌린 경우", { key: "Enter", ctrlKey: true, altKey: true }],
+    ["키를 누르고 있어 반복되는 경우", { key: "Enter", ctrlKey: true, repeat: true }],
+    ["한글 조합 중인 경우", { key: "Enter", ctrlKey: true, isComposing: true }],
+    ["Enter가 아닌 키", { key: "a", ctrlKey: true }],
+    ["수정키 없는 Enter", { key: "Enter" }],
+  ])("%s는 작성하지 않는다", async (_label, init) => {
+    await ready();
+    expect(keyDown(init)).toBe(true);
+    expect(generateCalls()).toHaveLength(0);
+  });
+
+  test("화면이 사라지면 단축키 처리기도 없어진다", async () => {
+    const remove = vi.spyOn(window, "removeEventListener");
+    const add = vi.spyOn(window, "addEventListener");
+    const user = await ready();
+    void user;
+    const added = add.mock.calls.filter(([type]) => type === "keydown").map(([, fn]) => fn);
+    expect(added.length).toBeGreaterThan(0);
+    unmountHome();
+    for (const fn of added) {
+      expect(remove.mock.calls.some(([type, handler]) => type === "keydown" && handler === fn)).toBe(true);
+    }
+    keyDown(CTRL_ENTER);
+    expect(generateCalls()).toHaveLength(0);
+  });
+
+  describe("복사 단축키", () => {
+    test("작성이 끝난 뒤 Ctrl+Shift+C는 고친 글을 복사하고 복사됨을 보인다", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const user = await ready();
+      await user.click(screen.getByRole("button", { name: "작성하기" }));
+      await waitFor(() => expect(resultBox()).toHaveValue("기본 결과"));
+      await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+      vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "" });
+      await user.type(resultBox(), " 수정");
+      let allowed = true;
+      await act(async () => {
+        allowed = keyDown({ key: "C", ctrlKey: true, shiftKey: true }, resultBox());
+      });
+      expect(allowed).toBe(false);
+      expect(writeText).toHaveBeenCalledExactlyOnceWith("기본 결과 수정");
+      expect(screen.getByRole("button", { name: "복사됨" })).toBeInTheDocument();
+    });
+
+    test("결과가 없으면 아무 일도 없다", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "" });
+      await renderLoaded();
+      expect(keyDown({ key: "C", ctrlKey: true, shiftKey: true })).toBe(true);
+      expect(writeText).not.toHaveBeenCalled();
+    });
   });
 });

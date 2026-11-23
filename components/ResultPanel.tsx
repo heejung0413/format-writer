@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
+import { useIsMac } from "@/lib/platform";
 
 type Props = {
   output: string;
@@ -30,6 +31,7 @@ export function ResultPanel({
   onRefine,
   onEdit,
 }: Props) {
+  const mac = useIsMac();
   const [instruction, setInstruction] = useState("");
   const [copied, setCopied] = useState(false);
   const canCopy = output !== "" && !busy;
@@ -39,6 +41,19 @@ export function ResultPanel({
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
+
+  const onShortcut = useEffectEvent((e: KeyboardEvent) => {
+    if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey || e.key.toLowerCase() !== "c") return;
+    if (!canCopy) return;
+    e.preventDefault();
+    void copy();
+  });
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => onShortcut(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   function submitRefine() {
     const text = instruction.trim();
@@ -77,7 +92,16 @@ export function ResultPanel({
             className="absolute right-2 top-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-100"
             onClick={copy}
           >
-            {copied ? "복사됨" : "복사"}
+            {copied ? (
+              "복사됨"
+            ) : (
+              <>
+                복사
+                <kbd aria-hidden="true" className="ml-1.5 font-sans text-[10px] text-slate-500">
+                  {mac ? "⌘⇧C" : "Ctrl+Shift+C"}
+                </kbd>
+              </>
+            )}
           </button>
         )}
       </div>
@@ -104,7 +128,8 @@ export function ResultPanel({
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) submitRefine();
+              // Ctrl/⌘+Enter는 작성하기 단축키의 몫이라 여기서 다듬기로 제출하지 않는다.
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && !e.ctrlKey && !e.metaKey) submitRefine();
             }}
           />
           <button

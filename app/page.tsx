@@ -60,6 +60,14 @@ export default function Home() {
       .catch(() => setError(LOAD_FAILED));
   }, []);
 
+  const onShortcut = useEffectEvent((e: KeyboardEvent) => {
+    const generateKey = e.key === "Enter" && !e.shiftKey && !e.altKey && !e.repeat && !e.isComposing;
+    if (!generateKey || !(e.metaKey || e.ctrlKey)) return;
+    if (busy || showManager || showSettings || input.trim() === "" || formatId === "") return;
+    e.preventDefault();
+    generate();
+  });
+
   const flushOnUnload = useEffectEvent(() => {
     const pending = pendingSaveRef.current;
     if (!pending) return;
@@ -75,10 +83,13 @@ export default function Home() {
 
   useEffect(() => {
     mountedRef.current = true;
+    const onKeyDown = (e: KeyboardEvent) => onShortcut(e);
     const onPageHide = () => flushOnUnload();
+    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       mountedRef.current = false;
+      window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("pagehide", onPageHide);
       flushOnUnload();
     };

@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test, vi } from "vitest";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
+import { act } from "react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { InputPanel } from "@/components/InputPanel";
+import { mockPlatform } from "../platform";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function setup(overrides: Partial<Parameters<typeof InputPanel>[0]> = {}) {
   const handlers = { onChange: vi.fn(), onSubmit: vi.fn(), onStop: vi.fn() };
@@ -58,5 +66,59 @@ describe("InputPanel", () => {
   test("busy가 아니면 입력창이 활성이다", () => {
     setup();
     expect(screen.getByPlaceholderText(placeholder)).toBeEnabled();
+  });
+});
+
+describe("InputPanel 단축키 표시", () => {
+  const hintOf = () =>
+    screen.getByRole("button", { name: "작성하기" }).querySelector("[aria-hidden='true']");
+
+  test("macOS에서는 ⌘↵를 표시하고 버튼의 접근성 이름은 작성하기 그대로다", () => {
+    mockPlatform("MacIntel");
+    setup();
+    expect(hintOf()).toHaveTextContent("⌘↵");
+  });
+
+  test("macOS가 아니면 Ctrl+Enter를 표시한다", () => {
+    mockPlatform("Linux x86_64");
+    setup();
+    expect(hintOf()).toHaveTextContent("Ctrl+Enter");
+  });
+
+  test("서버가 그린 화면(Ctrl)을 macOS 브라우저가 이어받아도 불일치 경고 없이 ⌘로 바뀐다", async () => {
+    const props = { value: "", busy: false, canSubmit: true, onChange: () => {}, onSubmit: () => {}, onStop: () => {} };
+    mockPlatform("MacIntel");
+    const html = renderToString(<InputPanel {...props} />);
+    expect(html).toContain("Ctrl+Enter");
+    expect(html).not.toContain("⌘");
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.append(container);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const recoverable: unknown[] = [];
+    const actEnv = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnv = actEnv.IS_REACT_ACT_ENVIRONMENT;
+    actEnv.IS_REACT_ACT_ENVIRONMENT = true;
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <InputPanel {...props} />, {
+        onRecoverableError: (error) => recoverable.push(error),
+      });
+    });
+    actEnv.IS_REACT_ACT_ENVIRONMENT = previousActEnv;
+    expect(recoverable).toEqual([]);
+    expect(errors).not.toHaveBeenCalled();
+    expect(container.querySelector("[aria-hidden='true']")).toHaveTextContent("⌘↵");
+    actEnv.IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root?.unmount());
+    actEnv.IS_REACT_ACT_ENVIRONMENT = previousActEnv;
+    container.remove();
+  });
+
+  test("중단 버튼에는 단축키 표시가 없다", () => {
+    mockPlatform("Linux");
+    setup({ busy: true });
+    expect(screen.getByRole("button", { name: "중단" }).querySelector("[aria-hidden]")).toBeNull();
   });
 });
