@@ -1,3 +1,5 @@
+
+import { readJsonBody } from "@/lib/request";
 import { deleteHistory, updateHistoryOutput } from "@/lib/store";
 
 type Context = { params: Promise<{ id: string }> };
@@ -10,7 +12,8 @@ const notFound = () =>
 
 export async function PATCH(req: Request, { params }: Context) {
   const { id } = await params;
-  const body = await req.json().catch(() => null);
+  const body = await readJsonBody(req);
+  if (body instanceof Response) return body;
   if (typeof body?.output !== "string") {
     return Response.json(
       { error: { code: "bad_request", message: "결과가 없습니다." } },

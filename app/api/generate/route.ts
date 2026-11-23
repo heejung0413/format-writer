@@ -1,6 +1,7 @@
 import { streamClaude } from "@/lib/claude";
 import { RECIPIENTS, TONES } from "@/lib/defaults";
 import { buildSystemPrompt } from "@/lib/prompt";
+import { readJsonBody } from "@/lib/request";
 import { listFormats } from "@/lib/store";
 import type { ChatMessage } from "@/lib/types";
 
@@ -23,9 +24,10 @@ function toMessages(value: unknown): ChatMessage[] {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
+  const body = await readJsonBody(req);
+  if (body instanceof Response) return body;
   const input = typeof body?.input === "string" ? body.input.trim() : "";
-  if (!input) return fail(400, "bad_request", "내용을 입력해 주세요.");
+  if (!body || !input) return fail(400, "bad_request", "내용을 입력해 주세요.");
 
   const format = (await listFormats()).find((f) => f.id === body.formatId);
   if (!format) return fail(404, "not_found", "포맷을 찾을 수 없습니다. 포맷을 다시 골라 주세요.");
@@ -38,13 +40,25 @@ export async function POST(req: Request) {
   const history = toMessages(body.messages);
   const messages: ChatMessage[] = history.length ? history : [{ role: "user", content: input }];
 
+  const abort = new AbortController();
+  if (req.signal.aborted) abort.abort();
+  else req.signal.addEventListener("abort", () => abort.abort(), { once: true });
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      for await (const line of streamClaude({ system, messages, signal: req.signal })) {
-        controller.enqueue(encoder.encode(JSON.stringify(line) + "\n"));
+      try {
+        for await (const line of streamClaude({ system, messages, signal: abort.signal })) {
+          controller.enqueue(encoder.encode(JSON.stringify(line) + "\n"));
+        }
+        controller.close();
+      } catch {
+        // 클라이언트가 떠난 뒤의 enqueue·close 실패다. Claude 호출을 멈추고 끝낸다.
+        abort.abort();
       }
-      controller.close();
+    },
+    cancel() {
+      abort.abort();
     },
   });
 

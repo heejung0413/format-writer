@@ -86,7 +86,7 @@ lib/
 각 단위의 책임:
 
 - `lib/prompt.ts`: 포맷, 받는 사람, 말투를 받아 system 지시문 문자열을 만든다. 파일·네트워크에 의존하지 않는다.
-- `lib/store.ts`: 파일 경로를 인자로 받아 목록을 읽고 쓴다. 파일이 없으면 기본값으로 만든다.
+- `lib/store.ts`: 데이터 폴더는 프로젝트 안 `data/`이고 환경 변수 `DATA_DIR`로 바꿀 수 있다(테스트는 임시 폴더를 쓴다). 파일이 없으면 기본값으로 만든다. 모든 작업은 한 번에 하나씩 실행하고, 임시 파일에 쓴 뒤 이름을 바꾸는 방식으로 저장한다. 파일이 깨졌거나 배열이 아니면 `.broken-<시각>` 이름으로 따로 치워 두고 기본값으로 다시 만든다.
 - `api/generate`: 요청 검증 → `prompt.ts`로 지시문 조립 → SDK 스트리밍 → 한 줄에 JSON 하나씩(아래 7절 형식) 응답 본문으로 흘려보낸다.
 - 컴포넌트는 `fetch`로 API만 부르고 파일·SDK를 직접 알지 못한다.
 
@@ -146,6 +146,8 @@ type HistoryItem = {
 | 네트워크·서버 오류 | 사유 + 다시 시도 버튼 |
 | Claude가 거절(`stop_reason: refusal`) | "이 내용은 작성할 수 없습니다" |
 | 입력이 비어 있음 | 작성하기 버튼 비활성화 |
+| 글이 끝까지 작성되지 않음(`stop_reason: max_tokens`이거나 글자가 없음) | "글이 끝까지 작성되지 않았습니다. 다시 시도해 주세요" + 다시 시도 버튼 |
+| JSON이 아닌 요청(Content-Type이 `application/json`이 아님) | HTTP 415, `unsupported_media_type`, "JSON 요청만 받습니다." |
 | 사용자가 중단 | 그때까지 나온 글을 그대로 두고 기록에는 저장하지 않는다 |
 
 요청 자체가 잘못된 경우(빈 입력, 없는 포맷)만 HTTP 400/404와 `{ error: { code, message } }`로 답한다. Claude 호출에서 생긴 오류는 SDK의 오류 클래스(`AuthenticationError`, `RateLimitError`, `APIError`)로 구분해 모두 HTTP 200 스트림 안의 `error` 줄로 알린다(코드: `auth`, `rate_limit`, `refusal`, `api_error`). `done`도 `error`도 없이 연결이 끊기면 브라우저는 "작성이 중간에 끊겼습니다"를 표시한다.

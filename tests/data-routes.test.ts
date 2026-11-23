@@ -109,3 +109,51 @@ describe("/api/history", () => {
     expect((await historyItem.DELETE(request("DELETE"), ctx(created.id))).status).toBe(404);
   });
 });
+
+describe("JSON이 아닌 요청은 415", () => {
+  const body = JSON.stringify({ name: "a", instruction: "b" });
+  const plain = (method: string) =>
+    new Request("http://localhost/api/x", {
+      method,
+      headers: { "Content-Type": "text/plain" },
+      body,
+    });
+  const noType = (method: string) =>
+    new Request("http://localhost/api/x", { method, body: new Blob([body]) });
+
+  const expected = {
+    error: { code: "unsupported_media_type", message: "JSON 요청만 받습니다." },
+  };
+
+  const cases: [string, (req: Request) => Promise<Response>][] = [
+    ["POST /api/formats", (r) => formats.POST(r)],
+    ["PUT /api/formats/[id]", (r) => formatItem.PUT(r, ctx("chat"))],
+    ["POST /api/history", (r) => history.POST(r)],
+    ["PATCH /api/history/[id]", (r) => historyItem.PATCH(r, ctx("x"))],
+  ];
+
+  test.each(cases)("%s", async (name, call) => {
+    const method = name.split(" ")[0];
+    for (const req of [plain(method), noType(method)]) {
+      const res = await call(req);
+      expect(res.status).toBe(415);
+      expect(await res.json()).toEqual(expected);
+    }
+  });
+
+  test("415를 돌려준 요청은 데이터를 바꾸지 않는다", async () => {
+    await formats.POST(plain("POST"));
+    expect((await (await formats.GET()).json()).length).toBe(3);
+  });
+
+  test("charset이 붙은 application/json은 받는다", async () => {
+    const res = await formats.POST(
+      new Request("http://localhost/api/x", {
+        method: "POST",
+        headers: { "Content-Type": "Application/JSON; charset=utf-8" },
+        body,
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+});

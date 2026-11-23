@@ -4,13 +4,21 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ChatMessage, StreamLine } from "@/lib/types";
 
-const calls: { system: string; messages: ChatMessage[] }[] = [];
+const calls: { system: string; messages: ChatMessage[]; signal?: AbortSignal }[] = [];
 let lines: StreamLine[] = [];
+let hold = false;
 
 vi.mock("@/lib/claude", () => ({
-  async *streamClaude(args: { system: string; messages: ChatMessage[] }) {
-    calls.push({ system: args.system, messages: args.messages });
+  async *streamClaude(args: { system: string; messages: ChatMessage[]; signal?: AbortSignal }) {
+    calls.push({ system: args.system, messages: args.messages, signal: args.signal });
     for (const line of lines) yield line;
+    if (hold && args.signal) {
+      const signal = args.signal;
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    }
   },
 }));
 
@@ -22,6 +30,7 @@ beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), "fw-gen-"));
   process.env.DATA_DIR = dir;
   calls.length = 0;
+  hold = false;
   lines = [{ type: "text", text: "안녕" }, { type: "text", text: "하세요" }, { type: "done" }];
 });
 
@@ -30,14 +39,17 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+function makeRequest(body: unknown, signal?: AbortSignal) {
+  return new Request("http://localhost/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 function post(body: unknown) {
-  return POST(
-    new Request("http://localhost/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  );
+  return POST(makeRequest(body));
 }
 
 describe("POST /api/generate", () => {
@@ -96,5 +108,56 @@ describe("POST /api/generate", () => {
     const res = await post({ input: "내용", formatId: "mail" });
     expect(res.status).toBe(200);
     expect(JSON.parse((await res.text()).trim())).toEqual(lines[0]);
+  });
+
+  test("JSON이 아닌 요청은 415이고 Claude를 부르지 않는다", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ input: "내용", formatId: "mail" }),
+      }),
+    );
+    expect(res.status).toBe(415);
+    expect(await res.json()).toEqual({
+      error: { code: "unsupported_media_type", message: "JSON 요청만 받습니다." },
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  describe("중단 처리", () => {
+    test("streamClaude에 중단 signal을 넘긴다", async () => {
+      await (await post({ input: "내용", formatId: "mail" })).text();
+      expect(calls[0].signal).toBeInstanceOf(AbortSignal);
+      expect(calls[0].signal?.aborted).toBe(false);
+    });
+
+    test("응답 본문을 취소하면 signal이 중단된다", async () => {
+      hold = true;
+      const res = await post({ input: "내용", formatId: "mail" });
+      await vi.waitFor(() => expect(calls).toHaveLength(1));
+      expect(calls[0].signal?.aborted).toBe(false);
+      await res.body!.cancel();
+      expect(calls[0].signal?.aborted).toBe(true);
+    });
+
+    test("요청 자체가 중단되면 signal이 중단된다", async () => {
+      hold = true;
+      const client = new AbortController();
+      const res = await POST(makeRequest({ input: "내용", formatId: "mail" }, client.signal));
+      await vi.waitFor(() => expect(calls).toHaveLength(1));
+      expect(calls[0].signal?.aborted).toBe(false);
+      client.abort();
+      expect(calls[0].signal?.aborted).toBe(true);
+      await res.body!.cancel();
+    });
+
+    test("이미 중단된 요청이면 signal도 처음부터 중단 상태다", async () => {
+      const client = new AbortController();
+      client.abort();
+      const res = await POST(makeRequest({ input: "내용", formatId: "mail" }, client.signal));
+      await res.text().catch(() => "");
+      expect(calls[0]?.signal?.aborted).toBe(true);
+    });
   });
 });
