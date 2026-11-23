@@ -72,6 +72,7 @@ lib/
   store.ts                 JSON 파일 저장소 (한 번에 하나씩, 원자적 저장)
   ndjson.ts                브라우저에서 스트림 읽기
 tests/                     Vitest 단위 테스트, tests/integration/ 통합 테스트
+e2e/                       Playwright 브라우저 테스트, 가짜 claude(e2e/bin/claude)
 docs/superpowers/          설계 문서와 구현 계획
 ```
 
@@ -98,6 +99,16 @@ npm test                  # 단위 + 통합 테스트 전체
 npm run test:integration  # 통합 테스트만
 npm run test:coverage     # 커버리지 포함
 ```
+
+E2E 테스트(`e2e/`)는 실제 Chrome 브라우저로 화면을 조작해 작성하기, 복사, 다듬기, 기록 복원·삭제, 포맷 관리, 중단, 오류 표시까지 사용자 흐름을 처음부터 끝까지 확인합니다. 실행할 때마다 다른 포트(4311)에 프로덕션 빌드를 `.next-e2e/`에 만들어 자체 서버를 띄우고, 데이터는 임시 폴더에 저장하며 `claude` 대신 `e2e/bin/claude`(가짜)를 쓰므로 `data/`와 개발 서버(4100)에 영향을 주지 않고 사용량도 들지 않습니다. 컴퓨터에 설치된 Google Chrome을 사용합니다.
+
+```bash
+npm run test:e2e          # E2E 테스트 (자체 서버를 띄우고 끝나면 종료)
+npm run test:e2e:ui       # Playwright UI 모드로 실행
+npm run test:e2e:real     # 진짜 claude를 호출하는 스모크 테스트 1건 (사용량이 듭니다)
+```
+
+마지막 명령만 진짜 Claude Code를 호출하므로 평소 실행에서는 빠져 있고, `E2E_REAL_CLAUDE=1`로 따로 실행할 때만 돌아갑니다.
 
 ## 알아 둘 점
 
