@@ -1,5 +1,7 @@
 import { expect, test } from "./fixtures";
 
+const DEFAULTS = ["메일", "채팅", "보고", "Jira 코멘트", "MR 본문", "리뷰 답글", "주간 보고"];
+
 test.describe("포맷 관리", () => {
   test("포맷을 추가해 글을 쓰고, 이름을 고치고, 지우면 선택이 첫 포맷으로 돌아가며 하나 남으면 삭제가 막힌다", async ({ app, page }) => {
     const name = "주간보고";
@@ -20,8 +22,8 @@ test.describe("포맷 관리", () => {
     await modal.getByRole("button", { name: "추가" }).click();
     await expect(row(name)).toBeVisible();
     await modal.getByRole("button", { name: "닫기" }).click();
-    await expect(app.formatSelect().getByRole("option")).toHaveText(["메일", "채팅", "보고", name]);
-    expect(app.formats().map((f) => f.name)).toEqual(["메일", "채팅", "보고", name]);
+    await expect(app.formatSelect().getByRole("option")).toHaveText([...DEFAULTS, name]);
+    expect(app.formats().map((f) => f.name)).toEqual([...DEFAULTS, name]);
 
     // 새 포맷으로 글 쓰기
     await app.generate("이번 주 결제 개편을 끝냈습니다", { format: name, recipient: "상사", tone: "보통" });
@@ -43,24 +45,26 @@ test.describe("포맷 관리", () => {
     await expect(row("주간 업무 보고")).toBeVisible();
     await expect(row(name)).toHaveCount(0);
     await modal.getByRole("button", { name: "닫기" }).click();
-    await expect(app.formatSelect().getByRole("option")).toHaveText(["메일", "채팅", "보고", "주간 업무 보고"]);
+    await expect(app.formatSelect().getByRole("option")).toHaveText([...DEFAULTS, "주간 업무 보고"]);
     expect(app.formats().map((f) => f.name)).toContain("주간 업무 보고");
 
     // 선택된 포맷을 지우면 첫 포맷으로 돌아간다
-    await expect(app.formatSelect()).toHaveValue(app.formats()[3].id);
+    await expect(app.formatSelect()).toHaveValue(app.formats()[7].id);
     await page.getByRole("button", { name: "포맷 관리" }).click();
     await row("주간 업무 보고").getByRole("button", { name: "삭제" }).click();
     await expect(row("주간 업무 보고")).toHaveCount(0);
     await modal.getByRole("button", { name: "닫기" }).click();
-    await expect(app.formatSelect().getByRole("option")).toHaveText(["메일", "채팅", "보고"]);
+    await expect(app.formatSelect().getByRole("option")).toHaveText(DEFAULTS);
     await expect(app.formatSelect()).toHaveValue("mail");
 
     // 하나만 남으면 삭제할 수 없다
     await page.getByRole("button", { name: "포맷 관리" }).click();
-    await row("채팅").getByRole("button", { name: "삭제" }).click();
-    await expect(row("채팅")).toHaveCount(0);
-    await expect(row("보고").getByRole("button", { name: "삭제" })).toBeEnabled();
-    await row("보고").getByRole("button", { name: "삭제" }).click();
+    // "보고"가 "주간 보고"에도 들어 있어 뒤에서부터 지운다.
+    for (const title of DEFAULTS.slice(1).reverse()) {
+      await expect(row(title).getByRole("button", { name: "삭제" })).toBeEnabled();
+      await row(title).getByRole("button", { name: "삭제" }).click();
+      await expect(row(title)).toHaveCount(0);
+    }
     await expect(modal.getByRole("listitem")).toHaveCount(1);
     await expect(row("메일").getByRole("button", { name: "삭제" })).toBeDisabled();
     expect(app.formats().map((f) => f.name)).toEqual(["메일"]);

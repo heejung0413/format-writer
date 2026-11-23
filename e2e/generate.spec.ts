@@ -1,12 +1,12 @@
 import { expect, test } from "./fixtures";
 
 test.describe("첫 화면", () => {
-  test("제목, 기본 포맷 3개, 빈 기록 안내가 보이고 작성하기는 글을 쓸 때까지 막혀 있다", async ({ app, page }) => {
+  test("제목, 기본 포맷 7개, 빈 기록 안내가 보이고 작성하기는 글을 쓸 때까지 막혀 있다", async ({ app, page }) => {
     await app.open();
 
     await expect(page).toHaveTitle("포맷 글 작성기");
     await expect(page.getByRole("heading", { name: "포맷 글 작성기" })).toBeVisible();
-    await expect(app.formatSelect().getByRole("option")).toHaveText(["메일", "채팅", "보고"]);
+    await expect(app.formatSelect().getByRole("option")).toHaveText(["메일", "채팅", "보고", "Jira 코멘트", "MR 본문", "리뷰 답글", "주간 보고"]);
     await expect(app.emptyHistory()).toBeVisible();
     await expect(app.generateButton()).toBeDisabled();
 
