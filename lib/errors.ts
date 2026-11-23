@@ -5,6 +5,11 @@ export type ErrorLine = { type: "error"; code: ErrorCode; message: string };
 
 const AUTH_MESSAGE = ".env.local에 ANTHROPIC_API_KEY를 넣고 서버를 다시 시작해 주세요.";
 
+function apiReason(body: unknown): string | null {
+  const message = (body as { error?: { message?: unknown } } | undefined)?.error?.message;
+  return typeof message === "string" && message.trim() ? message.trim() : null;
+}
+
 export function toErrorLine(err: unknown): ErrorLine {
   if (err instanceof Anthropic.AuthenticationError) {
     return { type: "error", code: "auth", message: AUTH_MESSAGE };
@@ -25,10 +30,13 @@ export function toErrorLine(err: unknown): ErrorLine {
   }
   if (err instanceof Anthropic.APIError) {
     const status = err.status ? ` (${err.status})` : "";
+    const reason = apiReason(err.error);
     return {
       type: "error",
       code: "api_error",
-      message: `Claude 요청에 실패했습니다${status}. 다시 시도해 주세요.`,
+      message: reason
+        ? `Claude 요청에 실패했습니다${status}: ${reason}`
+        : `Claude 요청에 실패했습니다${status}. 다시 시도해 주세요.`,
     };
   }
   if (err instanceof Anthropic.AnthropicError) {

@@ -25,6 +25,17 @@ describe("toErrorLine", () => {
     expect(line.message).toContain("500");
   });
 
+  test("API가 돌려준 사유가 있으면 메시지에 붙인다", () => {
+    const body = {
+      type: "error",
+      error: { type: "invalid_request_error", message: "Your credit balance is too low." },
+    };
+    const line = toErrorLine(Anthropic.APIError.generate(400, body, undefined, headers));
+    expect(line.code).toBe("api_error");
+    expect(line.message).toContain("400");
+    expect(line.message).toContain("Your credit balance is too low.");
+  });
+
   describe("API 오류가 아닌 SDK 오류", () => {
     const saved = {
       key: process.env.ANTHROPIC_API_KEY,
