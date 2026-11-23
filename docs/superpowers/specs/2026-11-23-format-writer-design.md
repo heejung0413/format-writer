@@ -123,7 +123,7 @@ type HistoryItem = {
 5. 서버는 SDK `client.messages.stream()`으로 호출하고, 응답 본문에 한 줄에 JSON 하나씩 흘려보낸다.
    - `{"type":"text","text":"..."}`: 글 조각
    - `{"type":"done"}`: 정상 종료
-   - `{"type":"error","code":"refusal" | "rate_limit" | "api_error","message":"..."}`: 시작된 뒤 생긴 오류나 거절
+   - `{"type":"error","code":"auth" | "rate_limit" | "refusal" | "api_error","message":"..."}`: Claude 호출 오류나 거절
 6. `done`을 받으면 브라우저가 첫 생성은 `POST /api/history`로 기록을 만들고, 다듬기는 `PATCH /api/history/[id]`로 같은 기록의 `output`을 갱신한다.
 
 ### Claude 요청 설정
@@ -148,7 +148,7 @@ type HistoryItem = {
 | 입력이 비어 있음 | 작성하기 버튼 비활성화 |
 | 사용자가 중단 | 그때까지 나온 글을 그대로 두고 기록에는 저장하지 않는다 |
 
-서버는 SDK의 오류 클래스(`AuthenticationError`, `RateLimitError`, `APIError`)로 구분해 `{ error: { code, message } }`와 HTTP 상태 코드를 돌려준다. 스트리밍이 시작된 뒤의 오류는 `error` 줄로 알린다. `done`도 `error`도 없이 연결이 끊기면 브라우저는 "작성이 중간에 끊겼습니다"를 표시한다.
+요청 자체가 잘못된 경우(빈 입력, 없는 포맷)만 HTTP 400/404와 `{ error: { code, message } }`로 답한다. Claude 호출에서 생긴 오류는 SDK의 오류 클래스(`AuthenticationError`, `RateLimitError`, `APIError`)로 구분해 모두 HTTP 200 스트림 안의 `error` 줄로 알린다(코드: `auth`, `rate_limit`, `refusal`, `api_error`). `done`도 `error`도 없이 연결이 끊기면 브라우저는 "작성이 중간에 끊겼습니다"를 표시한다.
 
 ## 9. 테스트
 
