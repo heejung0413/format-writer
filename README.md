@@ -71,7 +71,7 @@ lib/
   errors.ts                SDK 오류를 화면용 안내 문구로 변환
   store.ts                 JSON 파일 저장소 (한 번에 하나씩, 원자적 저장)
   ndjson.ts                브라우저에서 스트림 읽기
-tests/                     Vitest 단위 테스트
+tests/                     Vitest 단위 테스트, tests/integration/ 통합 테스트
 docs/superpowers/          설계 문서와 구현 계획
 ```
 
