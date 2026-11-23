@@ -50,3 +50,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("<예시>");
   });
 });
+
+describe("buildSystemPrompt 알 수 없는 말투", () => {
+  test("지침 표에 없는 말투는 이름 그대로 넣는다", () => {
+    const prompt = buildSystemPrompt({ format, recipient: "없음", tone: "엉뚱한말투" });
+    expect(prompt).toContain("말투: 엉뚱한말투");
+  });
+});

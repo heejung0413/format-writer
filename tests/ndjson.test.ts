@@ -62,3 +62,13 @@ describe("readStreamLines", () => {
     expect(stream.locked).toBe(false);
   });
 });
+
+describe("readStreamLines 빈 줄", () => {
+  test("빈 줄과 공백뿐인 줄은 건너뛴다", async () => {
+    const text = '\n{"type":"text","text":"가"}\n   \n\n{"type":"done"}\n\n';
+    expect(await collect(streamOf([encoder.encode(text)]))).toEqual([
+      { type: "text", text: "가" },
+      { type: "done" },
+    ]);
+  });
+});

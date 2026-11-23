@@ -1,7 +1,8 @@
+import { promises as fsPromises } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   addFormat,
   addHistory,
@@ -173,5 +174,29 @@ describe("깨진 파일", () => {
     await writeFile(path.join(dir, "history.json"), "garbage", "utf8");
     await addHistory(entry);
     expect(await listHistory()).toHaveLength(1);
+  });
+});
+
+describe("저장 실패", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("파일 교체가 실패하면 오류를 던지고 임시 파일을 남기지 않으며 기존 기록은 그대로다", async () => {
+    await addHistory(entry);
+    vi.spyOn(fsPromises, "rename").mockRejectedValueOnce(new Error("disk full"));
+    await expect(addHistory({ ...entry, input: "실패할 입력" })).rejects.toThrow("disk full");
+    expect((await readdir(dir)).filter((n) => n.includes(".tmp"))).toEqual([]);
+    const list = await listHistory();
+    expect(list).toHaveLength(1);
+    expect(list[0].input).toBe("내용");
+  });
+
+  test("한 번 실패한 뒤에도 다음 저장은 정상 동작한다", async () => {
+    await listHistory();
+    vi.spyOn(fsPromises, "rename").mockRejectedValueOnce(new Error("disk full"));
+    await expect(addHistory(entry)).rejects.toThrow("disk full");
+    await addHistory({ ...entry, input: "두번째" });
+    expect((await listHistory()).map((h) => h.input)).toEqual(["두번째"]);
   });
 });

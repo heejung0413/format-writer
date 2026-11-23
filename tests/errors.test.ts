@@ -92,3 +92,13 @@ describe("toErrorLine", () => {
     expect(toErrorLine("문자열").code).toBe("api_error");
   });
 });
+
+describe("toErrorLine 상태 코드가 없는 API 오류", () => {
+  test("상태 코드 표시 없이 일반 실패 문구를 돌려준다", () => {
+    const err = new Anthropic.APIError(undefined, undefined, "boom", headers);
+    const line = toErrorLine(err);
+    expect(line).toMatchObject({ type: "error", code: "api_error" });
+    expect(line.message).toBe("Claude 요청에 실패했습니다. 다시 시도해 주세요.");
+    expect(line.message).not.toContain("(");
+  });
+});

@@ -157,3 +157,40 @@ describe("JSON이 아닌 요청은 415", () => {
     expect(res.status).toBe(201);
   });
 });
+
+describe("잘못된 본문은 400", () => {
+  test("PUT /api/formats/[id]는 이름이나 지시문이 없으면 400이고 포맷을 바꾸지 않는다", async () => {
+    const res = await formatItem.PUT(request("PUT", { name: "  ", instruction: "x" }), ctx("chat"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("bad_request");
+    const list = await (await formats.GET()).json();
+    expect(list.find((f: { id: string }) => f.id === "chat").name).toBe("채팅");
+  });
+
+  test("PUT /api/formats/[id]는 JSON 배열 본문도 400", async () => {
+    const res = await formatItem.PUT(request("PUT", [1]), ctx("chat"));
+    expect(res.status).toBe(400);
+  });
+
+  test("PATCH /api/history/[id]는 output이 없거나 문자열이 아니면 400", async () => {
+    const created = await (
+      await history.POST(
+        request("POST", {
+          formatId: "mail",
+          formatName: "메일",
+          recipient: "상사",
+          tone: "격식",
+          input: "내용",
+          output: "결과",
+        }),
+      )
+    ).json();
+    for (const body of [{}, { output: 3 }, [1], null]) {
+      const res = await historyItem.PATCH(request("PATCH", body), ctx(created.id));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe("bad_request");
+    }
+    const list = await (await history.GET()).json();
+    expect(list[0].output).toBe("결과");
+  });
+});

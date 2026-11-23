@@ -60,6 +60,33 @@ describe("POST /api/generate", () => {
     expect(calls).toHaveLength(0);
   });
 
+  test("본문이 JSON 객체가 아니면 400", async () => {
+    for (const raw of ["not json", "[1,2]", "null", '"text"']) {
+      const res = await POST(
+        new Request("http://localhost/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: raw,
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe("bad_request");
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  test("JSON이 아닌 Content-Type이면 415", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ input: "내용", formatId: "mail" }),
+      }),
+    );
+    expect(res.status).toBe(415);
+    expect(calls).toHaveLength(0);
+  });
+
   test("없는 포맷이면 404", async () => {
     const res = await post({ input: "내용", formatId: "nope" });
     expect(res.status).toBe(404);
