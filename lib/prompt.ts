@@ -16,6 +16,7 @@ export function buildSystemPrompt(args: {
   recipient: string;
   tone: string;
   length?: string;
+  signature?: string;
 }): string {
   const { format, recipient, tone, length } = args;
   const lines = [
@@ -43,6 +44,16 @@ export function buildSystemPrompt(args: {
       "<예시>",
       example,
       "</예시>",
+    );
+  }
+  const signature = args.signature?.trim();
+  if (signature) {
+    lines.push(
+      "",
+      "맺음에 보내는 사람 서명이 들어가는 글이면 아래 서명을 그대로 쓰고, 서명이 어울리지 않는 글(메신저 글, 코멘트, 보고)에는 넣지 않는다.",
+      "<서명>",
+      signature,
+      "</서명>",
     );
   }
   return lines.join("\n");

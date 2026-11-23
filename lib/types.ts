@@ -17,6 +17,8 @@ export type HistoryItem = {
   output: string;
 };
 
+export type Settings = { signature: string };
+
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export type ErrorCode = "auth" | "rate_limit" | "refusal" | "api_error";

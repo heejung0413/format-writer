@@ -78,6 +78,40 @@ describe("buildSystemPrompt 길이", () => {
   });
 });
 
+describe("buildSystemPrompt 서명", () => {
+  const base = { format, recipient: "없음", tone: "보통" };
+
+  test("서명이 있으면 <서명> 태그로 감싸 그대로 넣고 어울릴 때만 쓰라고 안내한다", () => {
+    const prompt = buildSystemPrompt({ ...base, signature: "홍길동\n개발팀" });
+    expect(prompt).toContain("<서명>\n홍길동\n개발팀\n</서명>");
+    expect(prompt).toContain("보내는 사람 서명이 들어가는 글이면 아래 서명을 그대로 쓰고");
+    expect(prompt).toContain("메신저 글, 코멘트, 보고");
+  });
+
+  test("서명이 없거나 공백뿐이면 서명 관련 내용이 전혀 없다", () => {
+    for (const signature of [undefined, "", "  \n "]) {
+      const prompt = buildSystemPrompt({ ...base, signature });
+      expect(prompt).not.toContain("<서명>");
+      expect(prompt).not.toContain("서명");
+    }
+  });
+
+  test("서명의 앞뒤 공백은 지운다", () => {
+    expect(buildSystemPrompt({ ...base, signature: "  홍길동  \n" })).toContain("<서명>\n홍길동\n</서명>");
+  });
+
+  test("예시와 서명이 함께 있어도 둘 다 들어간다", () => {
+    const prompt = buildSystemPrompt({
+      format: { ...format, example: "제목: 예시" },
+      recipient: "없음",
+      tone: "보통",
+      signature: "홍길동",
+    });
+    expect(prompt).toContain("<예시>");
+    expect(prompt).toContain("<서명>");
+  });
+});
+
 describe("buildSystemPrompt 알 수 없는 말투", () => {
   test("지침 표에 없는 말투는 이름 그대로 넣는다", () => {
     const prompt = buildSystemPrompt({ format, recipient: "없음", tone: "엉뚱한말투" });

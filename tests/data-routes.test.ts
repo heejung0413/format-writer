@@ -7,6 +7,7 @@ import * as formatDefaults from "@/app/api/formats/defaults/route";
 import * as formats from "@/app/api/formats/route";
 import * as historyItem from "@/app/api/history/[id]/route";
 import * as history from "@/app/api/history/route";
+import * as settings from "@/app/api/settings/route";
 
 vi.mock("next/server", () => ({ connection: async () => {} }));
 
@@ -169,6 +170,49 @@ describe("/api/history", () => {
   });
 });
 
+describe("/api/settings", () => {
+  test("GET은 설정 파일이 없으면 빈 서명을 돌려준다", async () => {
+    const res = await settings.GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ signature: "" });
+  });
+
+  test("PUT은 앞뒤 공백을 지워 저장하고 GET에 나온다", async () => {
+    const res = await settings.PUT(request("PUT", { signature: "  홍길동\n개발팀 \n" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ signature: "홍길동\n개발팀" });
+    expect(await (await settings.GET()).json()).toEqual({ signature: "홍길동\n개발팀" });
+  });
+
+  test("PUT은 빈 서명으로 지울 수 있다", async () => {
+    await settings.PUT(request("PUT", { signature: "홍길동" }));
+    const res = await settings.PUT(request("PUT", { signature: "   " }));
+    expect(res.status).toBe(200);
+    expect(await (await settings.GET()).json()).toEqual({ signature: "" });
+  });
+
+  test("PUT은 500자까지 받고 501자부터 400이며 저장된 값을 바꾸지 않는다", async () => {
+    expect((await settings.PUT(request("PUT", { signature: "가".repeat(500) }))).status).toBe(200);
+    const res = await settings.PUT(request("PUT", { signature: "나".repeat(501) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("bad_request");
+    expect((await (await settings.GET()).json()).signature).toBe("가".repeat(500));
+  });
+
+  test("500자 제한은 공백을 지운 뒤의 길이로 센다", async () => {
+    const res = await settings.PUT(request("PUT", { signature: ` ${"가".repeat(500)} \n` }));
+    expect(res.status).toBe(200);
+  });
+
+  test("PUT은 signature가 문자열이 아니거나 없으면 400", async () => {
+    for (const body of [{ signature: 3 }, { signature: null }, { signature: ["a"] }, {}, [1], null]) {
+      const res = await settings.PUT(request("PUT", body));
+      expect(res.status).toBe(400);
+    }
+    expect(await (await settings.GET()).json()).toEqual({ signature: "" });
+  });
+});
+
 describe("JSON이 아닌 요청은 415", () => {
   const body = JSON.stringify({ name: "a", instruction: "b" });
   const plain = (method: string) =>
@@ -188,6 +232,7 @@ describe("JSON이 아닌 요청은 415", () => {
     ["POST /api/formats", (r) => formats.POST(r)],
     ["PUT /api/formats/[id]", (r) => formatItem.PUT(r, ctx("chat"))],
     ["POST /api/formats/defaults", (r) => formatDefaults.POST(r)],
+    ["PUT /api/settings", (r) => settings.PUT(r)],
     ["POST /api/history", (r) => history.POST(r)],
     ["PATCH /api/history/[id]", (r) => historyItem.PATCH(r, ctx("x"))],
   ];

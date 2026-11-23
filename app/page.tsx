@@ -6,6 +6,7 @@ import { HistoryList } from "@/components/HistoryList";
 import { InputPanel } from "@/components/InputPanel";
 import { OptionBar } from "@/components/OptionBar";
 import { ResultPanel } from "@/components/ResultPanel";
+import { SettingsModal } from "@/components/SettingsModal";
 import { LENGTHS, RECIPIENTS, TONES } from "@/lib/defaults";
 import { readStreamLines } from "@/lib/ndjson";
 import type { ChatMessage, Format, HistoryItem } from "@/lib/types";
@@ -35,6 +36,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showManager, setShowManager] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<{ messages: ChatMessage[]; refine: boolean } | null>(null);
 
@@ -183,7 +185,16 @@ export default function Home() {
     <div className="flex h-screen">
       <HistoryList items={history} activeId={historyId} onSelect={restore} onDelete={removeHistory} />
       <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
-        <h1 className="text-lg font-semibold">포맷 글 작성기</h1>
+        <div className="flex items-center">
+          <h1 className="flex-1 text-lg font-semibold">포맷 글 작성기</h1>
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+            onClick={() => setShowSettings(true)}
+          >
+            설정
+          </button>
+        </div>
         <OptionBar
           formats={formats}
           formatId={formatId}
@@ -214,6 +225,7 @@ export default function Home() {
           onRefine={refine}
         />
       </main>
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showManager && (
         <FormatManager
           formats={formats}

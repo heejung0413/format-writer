@@ -9,6 +9,7 @@ import * as formats from "@/app/api/formats/route";
 import * as generate from "@/app/api/generate/route";
 import * as historyItem from "@/app/api/history/[id]/route";
 import * as history from "@/app/api/history/route";
+import * as settings from "@/app/api/settings/route";
 import { claude } from "./fake-claude";
 
 type Context = { params: Promise<{ id: string }> };
@@ -25,6 +26,8 @@ const ROUTES: { method: string; pattern: RegExp; handler: Handler }[] = [
   { method: "POST", pattern: /^\/api\/history$/, handler: (req) => history.POST(req) },
   { method: "PATCH", pattern: /^\/api\/history\/([^/]+)$/, handler: historyItem.PATCH },
   { method: "DELETE", pattern: /^\/api\/history\/([^/]+)$/, handler: historyItem.DELETE },
+  { method: "GET", pattern: /^\/api\/settings$/, handler: () => settings.GET() },
+  { method: "PUT", pattern: /^\/api\/settings$/, handler: (req) => settings.PUT(req) },
 ];
 
 export type RequestLog = { method: string; path: string };

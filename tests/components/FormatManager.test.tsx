@@ -60,6 +60,11 @@ describe("FormatManager 목록", () => {
     expect(within(row("채팅")).getByText("채팅 지시")).toBeInTheDocument();
   });
 
+  test("포맷 관리 대화상자로 노출된다", () => {
+    setup();
+    expect(screen.getByRole("dialog", { name: "포맷 관리" })).toBeInTheDocument();
+  });
+
   test("닫기를 누르면 onClose를 부른다", async () => {
     const h = setup();
     await userEvent.click(screen.getByRole("button", { name: "닫기" }));

@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { DEFAULT_FORMATS } from "./defaults";
-import type { Format, HistoryItem } from "./types";
+import type { Format, HistoryItem, Settings } from "./types";
 
 export const HISTORY_LIMIT = 200;
 
 const FORMATS_FILE = "formats.json";
 const HISTORY_FILE = "history.json";
+const SETTINGS_FILE = "settings.json";
 
 function dataDir(): string {
   return process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), "data");
@@ -26,12 +27,12 @@ function serial<T>(task: () => Promise<T>): Promise<T> {
   return result;
 }
 
-async function writeList<T>(name: string, list: T[]): Promise<void> {
+async function writeFileAtomic(name: string, value: unknown): Promise<void> {
   await fs.mkdir(/*turbopackIgnore: true*/ dataDir(), { recursive: true });
   const target = filePath(name);
   const temp = `${target}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    await fs.writeFile(temp, JSON.stringify(list, null, 2), "utf8");
+    await fs.writeFile(temp, JSON.stringify(value, null, 2), "utf8");
     await fs.rename(temp, target);
   } catch (err) {
     await fs.rm(temp, { force: true });
@@ -44,25 +45,50 @@ async function setAside(name: string): Promise<void> {
   await fs.rename(target, `${target}.broken-${Date.now()}`);
 }
 
-async function readList<T>(name: string, fallback: T[]): Promise<T[]> {
+const writeList = <T>(name: string, list: T[]) => writeFileAtomic(name, list);
+
+type Read = { status: "missing" } | { status: "ok"; value: unknown } | { status: "broken" };
+
+async function readParsed(name: string, accept: (value: unknown) => boolean): Promise<Read> {
   let text: string;
   try {
     text = await fs.readFile(filePath(name), "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    await writeList(name, fallback);
-    return [...fallback];
+    return { status: "missing" };
   }
   try {
     const parsed: unknown = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed as T[];
+    if (accept(parsed)) return { status: "ok", value: parsed };
   } catch {
     // 아래에서 깨진 파일로 처리한다.
   }
-  await setAside(name);
+  return { status: "broken" };
+}
+
+async function readList<T>(name: string, fallback: T[]): Promise<T[]> {
+  const read = await readParsed(name, Array.isArray);
+  if (read.status === "ok") return read.value as T[];
+  if (read.status === "broken") await setAside(name);
   await writeList(name, fallback);
   return [...fallback];
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+async function readSettings(): Promise<Settings> {
+  const read = await readParsed(SETTINGS_FILE, isPlainObject);
+  if (read.status === "broken") {
+    await setAside(SETTINGS_FILE);
+    await writeFileAtomic(SETTINGS_FILE, DEFAULT_SETTINGS);
+  }
+  if (read.status !== "ok") return { ...DEFAULT_SETTINGS };
+  const { signature } = read.value as Record<string, unknown>;
+  return { signature: typeof signature === "string" ? signature : "" };
+}
+
+const DEFAULT_SETTINGS: Settings = { signature: "" };
 
 export type FormatInput = { name: string; instruction: string; example?: string };
 
@@ -115,6 +141,18 @@ export function deleteFormat(id: string): Promise<boolean> {
     if (rest.length === formats.length) return false;
     await writeList(FORMATS_FILE, rest);
     return true;
+  });
+}
+
+export function getSettings(): Promise<Settings> {
+  return serial(readSettings);
+}
+
+export function saveSettings(settings: Settings): Promise<Settings> {
+  return serial(async () => {
+    const saved: Settings = { signature: settings.signature };
+    await writeFileAtomic(SETTINGS_FILE, saved);
+    return saved;
   });
 }
 

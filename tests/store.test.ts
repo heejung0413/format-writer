@@ -8,10 +8,12 @@ import {
   addHistory,
   deleteFormat,
   deleteHistory,
+  getSettings,
   HISTORY_LIMIT,
   listFormats,
   listHistory,
   restoreDefaultFormats,
+  saveSettings,
   updateFormat,
   updateHistoryOutput,
 } from "@/lib/store";
@@ -193,6 +195,72 @@ describe("restoreDefaultFormats", () => {
     await writeFormats(OLD_THREE.map((id) => ({ id, name: id, instruction: id })));
     await Promise.all([restoreDefaultFormats(), restoreDefaultFormats()]);
     expect((await listFormats()).map((f) => f.id)).toEqual(ALL);
+  });
+});
+
+describe("settings", () => {
+  const settingsPath = () => path.join(dir, "settings.json");
+  const brokenSettings = async () =>
+    (await readdir(dir)).filter((n) => n.startsWith("settings.json.broken-"));
+
+  test("파일이 없으면 빈 서명을 돌려주고 읽기만으로는 파일을 만들지 않는다", async () => {
+    expect(await getSettings()).toEqual({ signature: "" });
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  test("저장한 서명을 다시 읽을 수 있고 파일에 객체 하나로 남는다", async () => {
+    await saveSettings({ signature: "홍길동\n개발팀" });
+    expect(await getSettings()).toEqual({ signature: "홍길동\n개발팀" });
+    expect(JSON.parse(await readFile(settingsPath(), "utf8"))).toEqual({ signature: "홍길동\n개발팀" });
+  });
+
+  test("다시 저장하면 덮어쓰고 임시 파일을 남기지 않는다", async () => {
+    await saveSettings({ signature: "첫째" });
+    await saveSettings({ signature: "" });
+    expect(await getSettings()).toEqual({ signature: "" });
+    expect((await readdir(dir)).filter((n) => n.includes(".tmp"))).toEqual([]);
+  });
+
+  test("동시에 저장해도 파일이 깨지지 않고 마지막 요청 값이 남는다", async () => {
+    await Promise.all(Array.from({ length: 10 }, (_, i) => saveSettings({ signature: `서명 ${i}` })));
+    expect(await getSettings()).toEqual({ signature: "서명 9" });
+    expect(JSON.parse(await readFile(settingsPath(), "utf8"))).toEqual({ signature: "서명 9" });
+  });
+
+  test("settings.json이 올바른 JSON이 아니면 따로 치워 두고 기본값으로 다시 만든다", async () => {
+    await writeFile(settingsPath(), "{ not json", "utf8");
+    expect(await getSettings()).toEqual({ signature: "" });
+    const broken = await brokenSettings();
+    expect(broken).toHaveLength(1);
+    expect(await readFile(path.join(dir, broken[0]), "utf8")).toBe("{ not json");
+    expect(JSON.parse(await readFile(settingsPath(), "utf8"))).toEqual({ signature: "" });
+  });
+
+  test.each([["배열", "[1]"], ["null", "null"], ["문자열", '"서명"'], ["숫자", "3"]])(
+    "settings.json이 객체가 아니면(%s) 따로 치워 두고 기본값으로 시작한다",
+    async (_name, raw) => {
+      await writeFile(settingsPath(), raw, "utf8");
+      expect(await getSettings()).toEqual({ signature: "" });
+      expect(await brokenSettings()).toHaveLength(1);
+    },
+  );
+
+  test("signature가 문자열이 아니면 빈 서명으로 보고 파일은 그대로 둔다", async () => {
+    await writeFile(settingsPath(), '{"signature": 3}', "utf8");
+    expect(await getSettings()).toEqual({ signature: "" });
+    expect(await brokenSettings()).toEqual([]);
+    expect(await readFile(settingsPath(), "utf8")).toBe('{"signature": 3}');
+  });
+
+  test("목록 파일과 같은 줄에서 처리되어 읽기와 저장이 섞여도 온전한 값을 읽는다", async () => {
+    const results = await Promise.all([
+      saveSettings({ signature: "가나다" }),
+      getSettings(),
+      saveSettings({ signature: "라마바" }),
+      getSettings(),
+    ]);
+    expect(results[1]).toEqual({ signature: "가나다" });
+    expect(results[3]).toEqual({ signature: "라마바" });
   });
 });
 

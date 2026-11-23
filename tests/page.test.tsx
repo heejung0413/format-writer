@@ -58,6 +58,7 @@ type Backend = {
   history: HistoryItem[];
   generate: (call: Call) => Response | Promise<Response>;
   formatsResponse?: () => Response;
+  signature: string;
 };
 
 let backend: Backend;
@@ -79,6 +80,7 @@ beforeEach(() => {
     formats: [...FORMATS],
     history: [],
     generate: () => streamResponse([text("기본 결과"), done]),
+    signature: "",
   };
   vi.stubGlobal(
     "fetch",
@@ -99,6 +101,11 @@ beforeEach(() => {
       }
       if (url === "/api/history" && method === "GET") return json(backend.history);
       if (url === "/api/generate") return backend.generate(call);
+      if (url === "/api/settings" && method === "GET") return json({ signature: backend.signature });
+      if (url === "/api/settings" && method === "PUT") {
+        backend.signature = (call.body as { signature: string }).signature;
+        return json({ signature: backend.signature });
+      }
       if (url === "/api/history" && method === "POST") {
         const created: HistoryItem = {
           ...(call.body as Omit<HistoryItem, "id" | "createdAt">),
@@ -582,6 +589,49 @@ describe("Home 중단", () => {
     expect(await screen.findByText("초안 글")).toBeInTheDocument();
     expect(screen.queryByText("다듬는 중간")).not.toBeInTheDocument();
     expect(callsTo("/api/history/h-new-1", "PATCH")).toHaveLength(0);
+  });
+});
+
+describe("Home 설정", () => {
+  test("상단의 설정 버튼을 누르면 설정 모달이 열리고 닫기로 닫힌다", async () => {
+    const user = await renderLoaded();
+    expect(screen.queryByRole("dialog", { name: "설정" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "설정" }));
+    expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "닫기" }));
+    expect(screen.queryByRole("dialog", { name: "설정" })).not.toBeInTheDocument();
+  });
+
+  test("설정 버튼은 제목과 같은 상단 줄에 있다", async () => {
+    await renderLoaded();
+    const heading = screen.getByRole("heading", { level: 1, name: "포맷 글 작성기" });
+    expect(heading.parentElement).toContainElement(screen.getByRole("button", { name: "설정" }));
+  });
+
+  test("서명을 저장하면 모달이 닫히고, 이후 생성 요청에는 서명을 싣지 않는다", async () => {
+    const user = await renderLoaded();
+    await user.click(screen.getByRole("button", { name: "설정" }));
+    const box = await screen.findByLabelText("서명");
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, "비밀 서명 홍길동");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "설정" })).not.toBeInTheDocument());
+    expect(callsTo("/api/settings", "PUT")[0].body).toEqual({ signature: "비밀 서명 홍길동" });
+
+    await writeAndSubmit(user);
+    await screen.findByText("기본 결과");
+    const [generate] = callsTo("/api/generate", "POST");
+    expect(Object.keys(generate.body as object).sort()).toEqual(
+      ["formatId", "input", "length", "messages", "recipient", "tone"],
+    );
+    expect(JSON.stringify(generate.body)).not.toContain("서명");
+    const historyPost = callsTo("/api/history", "POST")[0];
+    expect(JSON.stringify(historyPost.body)).not.toContain("서명");
+  });
+
+  test("처음 화면을 불러올 때는 설정을 요청하지 않는다", async () => {
+    await renderLoaded();
+    expect(calls.filter((c) => c.url === "/api/settings")).toHaveLength(0);
   });
 });
 

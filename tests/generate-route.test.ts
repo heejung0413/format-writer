@@ -23,6 +23,7 @@ vi.mock("@/lib/provider", () => ({
 }));
 
 import { POST } from "@/app/api/generate/route";
+import { saveSettings } from "@/lib/store";
 
 let dir: string;
 
@@ -125,6 +126,39 @@ describe("POST /api/generate", () => {
     expect(calls[0].system).toContain("길이: 짧게");
     expect(calls[1].system).toContain("길이: 자세히");
     for (const call of calls.slice(2)) expect(call.system).not.toContain("길이:");
+  });
+
+  test("저장된 서명을 서버에서 읽어 지시문에 넣는다", async () => {
+    await saveSettings({ signature: "홍길동 드림" });
+    await (await post({ input: "내용", formatId: "mail" })).text();
+    expect(calls[0].system).toContain("<서명>\n홍길동 드림\n</서명>");
+  });
+
+  test("서명이 비어 있거나 설정 파일이 없으면 지시문에 서명이 없다", async () => {
+    await (await post({ input: "내용", formatId: "mail" })).text();
+    await saveSettings({ signature: "" });
+    await (await post({ input: "내용", formatId: "mail" })).text();
+    for (const call of calls) expect(call.system).not.toContain("서명");
+  });
+
+  test("요청 본문에 실어 보낸 서명은 쓰지 않는다", async () => {
+    await saveSettings({ signature: "저장된 서명" });
+    await (await post({ input: "내용", formatId: "mail", signature: "끼워 넣은 서명" })).text();
+    expect(calls[0].system).toContain("저장된 서명");
+    expect(calls[0].system).not.toContain("끼워 넣은 서명");
+    await saveSettings({ signature: "" });
+    await (await post({ input: "내용", formatId: "mail", signature: "끼워 넣은 서명" })).text();
+    expect(calls[1].system).not.toContain("끼워 넣은 서명");
+  });
+
+  test("서명은 요청마다 새로 읽어 바꾼 값이 바로 반영된다", async () => {
+    await saveSettings({ signature: "처음" });
+    await (await post({ input: "내용", formatId: "mail" })).text();
+    await saveSettings({ signature: "나중" });
+    await (await post({ input: "내용", formatId: "mail" })).text();
+    expect(calls[0].system).toContain("처음");
+    expect(calls[1].system).toContain("나중");
+    expect(calls[1].system).not.toContain("처음");
   });
 
   test("다듬기는 받은 대화를 그대로 보내고 형식이 틀린 항목은 버린다", async () => {

@@ -36,7 +36,7 @@ function readJson<T>(name: string): T {
 /** 서버가 쓰는 임시 데이터 폴더와 가짜 claude의 기록을 시험 전에 처음 상태로 되돌린다. */
 function resetState() {
   mkdirSync(dataDir, { recursive: true });
-  for (const name of ["formats.json", "history.json"]) rmSync(path.join(dataDir, name), { force: true });
+  for (const name of ["formats.json", "history.json", "settings.json"]) rmSync(path.join(dataDir, name), { force: true });
   rmSync(stateDir, { recursive: true, force: true });
   writeFileSync(logFile, "");
 }

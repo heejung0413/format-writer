@@ -70,9 +70,14 @@ export function FormatManager({ formats, onChange, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-white p-5">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="format-manager-title"
+        className="flex max-h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-white p-5"
+      >
         <div className="flex items-center">
-          <h2 className="flex-1 text-base font-semibold">포맷 관리</h2>
+          <h2 id="format-manager-title" className="flex-1 text-base font-semibold">포맷 관리</h2>
           <button type="button" className="text-sm text-slate-500 hover:text-slate-900" onClick={onClose}>
             닫기
           </button>

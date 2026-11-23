@@ -2,7 +2,7 @@ import { streamClaude } from "@/lib/provider";
 import { LENGTHS, RECIPIENTS, TONES } from "@/lib/defaults";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { readJsonBody } from "@/lib/request";
-import { listFormats } from "@/lib/store";
+import { getSettings, listFormats } from "@/lib/store";
 import type { ChatMessage } from "@/lib/types";
 
 function fail(status: number, code: string, message: string) {
@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     recipient: pick(body.recipient, RECIPIENTS, "없음"),
     tone: pick(body.tone, TONES, "보통"),
     length: pick(body.length, LENGTHS, "보통"),
+    signature: (await getSettings()).signature,
   });
   const history = toMessages(body.messages);
   const messages: ChatMessage[] = history.length ? history : [{ role: "user", content: input }];
