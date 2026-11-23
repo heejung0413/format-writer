@@ -1,5 +1,7 @@
 # 포맷 글 작성기
 
+[![테스트](https://github.com/heejung0413/format-writer/actions/workflows/test.yml/badge.svg)](https://github.com/heejung0413/format-writer/actions/workflows/test.yml)
+
 대충 적은 메모를 넣고 포맷(메일, 채팅, 보고 등)을 고르면 Claude가 그 포맷에 맞는 완성된 글로 다시 써 주는 개인용 웹사이트입니다. 내 컴퓨터(`localhost`)에서만 실행합니다.
 
 ![포맷 글 작성기 화면](docs/images/preview.png)
@@ -109,6 +111,8 @@ npm run test:e2e:real     # 진짜 claude를 호출하는 스모크 테스트 1�
 ```
 
 마지막 명령만 진짜 Claude Code를 호출하므로 평소 실행에서는 빠져 있고, `E2E_REAL_CLAUDE=1`로 따로 실행할 때만 돌아갑니다.
+
+`main`에 푸시하거나 풀 리퀘스트를 열면 GitHub Actions(`.github/workflows/test.yml`)가 타입 검사, 린트, 유닛·통합 테스트, E2E 테스트를 자동으로 돌립니다.
 
 ## 알아 둘 점
 
