@@ -17,6 +17,26 @@ const fieldClass = "w-full rounded-md border border-slate-300 px-3 py-1.5 text-s
 export function FormatManager({ formats, onChange, onClose }: Props) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  const [defaultsNotice, setDefaultsNotice] = useState<{ text: string; failed: boolean } | null>(null);
+
+  async function loadDefaults() {
+    setDefaultsNotice(null);
+    const res = await fetch("/api/formats/defaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setDefaultsNotice({ text: data?.error?.message ?? "기본 포맷을 불러오지 못했습니다.", failed: true });
+      return;
+    }
+    const { formats: next, added } = data as { formats: Format[]; added: number };
+    onChange(next);
+    setDefaultsNotice({
+      text: added > 0 ? `기본 포맷 ${added}개를 추가했습니다.` : "추가할 기본 포맷이 없습니다.",
+      failed: false,
+    });
+  }
 
   async function save() {
     setError(null);
@@ -88,6 +108,19 @@ export function FormatManager({ formats, onChange, onClose }: Props) {
             </li>
           ))}
         </ul>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+            onClick={loadDefaults}
+          >
+            기본 포맷 불러오기
+          </button>
+          <p role="status" className={`text-sm ${defaultsNotice?.failed ? "text-red-700" : "text-slate-600"}`}>
+            {defaultsNotice?.text}
+          </p>
+        </div>
 
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-semibold">{draft.id ? "포맷 수정" : "새 포맷"}</h3>

@@ -73,6 +73,19 @@ export function listFormats(): Promise<Format[]> {
   return serial(readFormats);
 }
 
+/** 목록에 없는 id의 기본 포맷만 끝에 붙인다. 이미 있는 포맷은 고친 내용 그대로 둔다. */
+export function restoreDefaultFormats(): Promise<{ formats: Format[]; added: number }> {
+  return serial(async () => {
+    const formats = await readFormats();
+    const known = new Set(formats.map((f) => f.id));
+    const missing = DEFAULT_FORMATS.filter((f) => !known.has(f.id));
+    if (missing.length === 0) return { formats, added: 0 };
+    const next = [...formats, ...missing];
+    await writeList(FORMATS_FILE, next);
+    return { formats: next, added: missing.length };
+  });
+}
+
 export function addFormat(input: FormatInput): Promise<Format> {
   return serial(async () => {
     const formats = await readFormats();

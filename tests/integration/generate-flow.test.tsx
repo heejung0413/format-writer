@@ -30,10 +30,18 @@ async function generateOnce(user: Awaited<ReturnType<typeof openHome>>["user"], 
 }
 
 describe("처음 실행", () => {
-  test("빈 데이터 폴더에서 기본 포맷 3개가 보이고 formats.json이 만들어진다", async () => {
+  test("빈 데이터 폴더에서 기본 포맷 7개가 보이고 formats.json이 만들어진다", async () => {
     await openHome();
 
-    expect(formatNames()).toEqual(["메일", "채팅", "보고"]);
+    expect(formatNames()).toEqual([
+      "메일",
+      "채팅",
+      "보고",
+      "Jira 코멘트",
+      "MR 본문",
+      "리뷰 답글",
+      "주간 보고",
+    ]);
     expect(screen.getByText("아직 기록이 없습니다.")).toBeInTheDocument();
 
     const saved = await h.readJson<Format[]>("formats.json");
@@ -41,6 +49,10 @@ describe("처음 실행", () => {
       ["mail", "메일"],
       ["chat", "채팅"],
       ["report", "보고"],
+      ["jira", "Jira 코멘트"],
+      ["mr", "MR 본문"],
+      ["review", "리뷰 답글"],
+      ["weekly", "주간 보고"],
     ]);
     expect(saved.every((f) => f.instruction.length > 0)).toBe(true);
     expect(await h.readJson("history.json")).toEqual([]);

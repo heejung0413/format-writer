@@ -7,6 +7,12 @@ export function unsupportedMediaType(): Response {
   );
 }
 
+/** 본문을 읽지 않는 POST용. Content-Type이 application/json이 아니면 415 Response를, 맞으면 null을 돌려준다. */
+export function requireJsonType(req: Request): Response | null {
+  const type = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  return type === "application/json" ? null : unsupportedMediaType();
+}
+
 /**
  * JSON 요청 본문을 읽는다. Content-Type이 application/json이 아니면 415 Response를,
  * JSON이 아니거나 객체가 아니면 null을 돌려준다.
@@ -14,8 +20,8 @@ export function unsupportedMediaType(): Response {
  * 다른 사이트의 페이지가 localhost로 몰래 보내는 요청을 여기서 막는다.
  */
 export async function readJsonBody(req: Request): Promise<JsonBody | null | Response> {
-  const type = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-  if (type !== "application/json") return unsupportedMediaType();
+  const rejected = requireJsonType(req);
+  if (rejected) return rejected;
   const parsed: unknown = await req.json().catch(() => null);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
   return parsed as JsonBody;

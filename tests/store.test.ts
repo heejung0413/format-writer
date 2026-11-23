@@ -11,6 +11,7 @@ import {
   HISTORY_LIMIT,
   listFormats,
   listHistory,
+  restoreDefaultFormats,
   updateFormat,
   updateHistoryOutput,
 } from "@/lib/store";
@@ -37,19 +38,27 @@ const entry = {
 };
 
 describe("formats", () => {
-  test("파일이 없으면 기본 포맷 3개로 파일을 만든다", async () => {
+  test("파일이 없으면 기본 포맷 7개로 파일을 만든다", async () => {
     const formats = await listFormats();
-    expect(formats.map((f) => f.name)).toEqual(["메일", "채팅", "보고"]);
+    expect(formats.map((f) => f.name)).toEqual([
+      "메일",
+      "채팅",
+      "보고",
+      "Jira 코멘트",
+      "MR 본문",
+      "리뷰 답글",
+      "주간 보고",
+    ]);
     const saved = JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"));
-    expect(saved).toHaveLength(3);
+    expect(saved).toHaveLength(7);
   });
 
   test("추가하면 id가 붙고 목록 끝에 들어간다", async () => {
     const added = await addFormat({ name: "주간보고", instruction: "표로 쓴다." });
     expect(added.id).toBeTruthy();
     const formats = await listFormats();
-    expect(formats).toHaveLength(4);
-    expect(formats[3]).toEqual(added);
+    expect(formats).toHaveLength(8);
+    expect(formats[7]).toEqual(added);
   });
 
   test("수정하면 해당 항목만 바뀐다", async () => {
@@ -65,7 +74,8 @@ describe("formats", () => {
       example: "넵 확인했습니다",
     });
     const formats = await listFormats();
-    expect(formats.map((f) => f.name)).toEqual(["메일", "메신저", "보고"]);
+    expect(formats.map((f) => f.name).slice(0, 3)).toEqual(["메일", "메신저", "보고"]);
+    expect(formats).toHaveLength(7);
   });
 
   test("없는 id를 수정하면 null을 돌려준다", async () => {
@@ -75,7 +85,7 @@ describe("formats", () => {
   test("삭제하면 true, 없는 id는 false", async () => {
     expect(await deleteFormat("report")).toBe(true);
     expect(await deleteFormat("report")).toBe(false);
-    expect((await listFormats()).map((f) => f.id)).toEqual(["mail", "chat"]);
+    expect((await listFormats()).map((f) => f.id)).toEqual(["mail", "chat", "jira", "mr", "review", "weekly"]);
   });
 });
 
@@ -121,6 +131,71 @@ describe("history", () => {
   });
 });
 
+describe("restoreDefaultFormats", () => {
+  const OLD_THREE = ["mail", "chat", "report"];
+  const ALL = ["mail", "chat", "report", "jira", "mr", "review", "weekly"];
+  const writeFormats = (list: unknown) =>
+    writeFile(path.join(dir, "formats.json"), JSON.stringify(list), "utf8");
+
+  test("예전 기본 3개만 있는 파일에는 새 기본 포맷 4개를 끝에 붙인다", async () => {
+    await listFormats();
+    const saved = JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"));
+    await writeFormats(saved.slice(0, 3));
+    const { formats, added } = await restoreDefaultFormats();
+    expect(added).toBe(4);
+    expect(formats.map((f) => f.id)).toEqual(ALL);
+    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toEqual(formats);
+  });
+
+  test("사용자가 지운 기본 포맷은 목록 끝에 다시 붙는다", async () => {
+    await listFormats();
+    await deleteFormat("chat");
+    const { formats, added } = await restoreDefaultFormats();
+    expect(added).toBe(1);
+    expect(formats.map((f) => f.id)).toEqual(ALL.filter((id) => id !== "chat").concat("chat"));
+  });
+
+  test("이미 있는 기본 포맷은 고친 내용 그대로 두고 다시 넣지 않는다", async () => {
+    await listFormats();
+    await updateFormat("mail", { name: "내 메일", instruction: "내가 고친 지시" });
+    const { formats, added } = await restoreDefaultFormats();
+    expect(added).toBe(0);
+    expect(formats).toHaveLength(ALL.length);
+    expect(formats.find((f) => f.id === "mail")).toEqual({
+      id: "mail",
+      name: "내 메일",
+      instruction: "내가 고친 지시",
+    });
+  });
+
+  test("이름이 같아도 id가 다르면 다른 포맷으로 보고 기본 포맷을 붙인다", async () => {
+    await writeFormats([{ id: "mine", name: "Jira 코멘트", instruction: "내 지시" }]);
+    const { formats, added } = await restoreDefaultFormats();
+    expect(added).toBe(ALL.length);
+    expect(formats.map((f) => f.id)).toEqual(["mine", ...ALL]);
+  });
+
+  test("추가할 것이 없으면 added가 0이고 파일을 바꾸지 않는다", async () => {
+    await listFormats();
+    const before = await readFile(path.join(dir, "formats.json"), "utf8");
+    const { added } = await restoreDefaultFormats();
+    expect(added).toBe(0);
+    expect(await readFile(path.join(dir, "formats.json"), "utf8")).toBe(before);
+  });
+
+  test("파일이 없으면 기본 포맷 전체로 만들고 added는 0이다", async () => {
+    const { formats, added } = await restoreDefaultFormats();
+    expect(formats.map((f) => f.id)).toEqual(ALL);
+    expect(added).toBe(0);
+  });
+
+  test("동시에 불러도 같은 기본 포맷이 두 번 들어가지 않는다", async () => {
+    await writeFormats(OLD_THREE.map((id) => ({ id, name: id, instruction: id })));
+    await Promise.all([restoreDefaultFormats(), restoreDefaultFormats()]);
+    expect((await listFormats()).map((f) => f.id)).toEqual(ALL);
+  });
+});
+
 describe("동시 실행", () => {
   test("addHistory 20개를 동시에 불러도 모두 남는다", async () => {
     await Promise.all(
@@ -131,10 +206,10 @@ describe("동시 실행", () => {
     expect(new Set(history.map((h) => h.input)).size).toBe(20);
   });
 
-  test("빈 폴더에서 listFormats를 동시에 불러도 모두 기본 3개를 받는다", async () => {
+  test("빈 폴더에서 listFormats를 동시에 불러도 모두 기본 7개를 받는다", async () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => listFormats()));
-    for (const formats of results) expect(formats.map((f) => f.id)).toEqual(["mail", "chat", "report"]);
-    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toHaveLength(3);
+    for (const formats of results) expect(formats).toHaveLength(7);
+    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toHaveLength(7);
   });
 
   test("쓰는 도중의 파일을 읽지 않도록 임시 파일을 거쳐 저장한다", async () => {
@@ -153,12 +228,12 @@ describe("깨진 파일", () => {
   test("formats.json이 올바른 JSON이 아니면 따로 치워 두고 기본 포맷으로 다시 만든다", async () => {
     await writeFile(path.join(dir, "formats.json"), "{ not json", "utf8");
     const formats = await listFormats();
-    expect(formats.map((f) => f.id)).toEqual(["mail", "chat", "report"]);
+    expect(formats).toHaveLength(7);
     const broken = await brokenFiles();
     expect(broken).toHaveLength(1);
     expect(broken[0]).toMatch(/^formats\.json\.broken-/);
     expect(await readFile(path.join(dir, broken[0]), "utf8")).toBe("{ not json");
-    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toHaveLength(3);
+    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toHaveLength(7);
   });
 
   test("history.json이 배열이 아니면 따로 치워 두고 빈 목록으로 시작한다", async () => {

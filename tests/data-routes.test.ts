@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as formatItem from "@/app/api/formats/[id]/route";
+import * as formatDefaults from "@/app/api/formats/defaults/route";
 import * as formats from "@/app/api/formats/route";
 import * as historyItem from "@/app/api/history/[id]/route";
 import * as history from "@/app/api/history/route";
@@ -32,9 +33,17 @@ function request(method: string, body?: unknown) {
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
 describe("/api/formats", () => {
-  test("GET은 기본 포맷 3개를 돌려준다", async () => {
+  test("GET은 기본 포맷 7개를 돌려준다", async () => {
     const list = await (await formats.GET()).json();
-    expect(list.map((f: { id: string }) => f.id)).toEqual(["mail", "chat", "report"]);
+    expect(list.map((f: { id: string }) => f.id)).toEqual([
+      "mail",
+      "chat",
+      "report",
+      "jira",
+      "mr",
+      "review",
+      "weekly",
+    ]);
   });
 
   test("POST는 앞뒤 공백을 지우고 추가한다", async () => {
@@ -69,6 +78,44 @@ describe("/api/formats", () => {
   test("DELETE는 204, 없는 id는 404", async () => {
     expect((await formatItem.DELETE(request("DELETE"), ctx("report"))).status).toBe(204);
     expect((await formatItem.DELETE(request("DELETE"), ctx("report"))).status).toBe(404);
+  });
+});
+
+describe("POST /api/formats/defaults", () => {
+  test("지운 기본 포맷을 되살리고 목록과 추가한 개수를 돌려준다", async () => {
+    await formatItem.DELETE(request("DELETE"), ctx("jira"));
+    await formatItem.DELETE(request("DELETE"), ctx("chat"));
+    const res = await formatDefaults.POST(request("POST"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.added).toBe(2);
+    // 기본 포맷 순서(chat, jira)대로 끝에 붙는다.
+    expect(body.formats.map((f: { id: string }) => f.id)).toEqual([
+      "mail",
+      "report",
+      "mr",
+      "review",
+      "weekly",
+      "chat",
+      "jira",
+    ]);
+    expect(await (await formats.GET()).json()).toEqual(body.formats);
+  });
+
+  test("추가할 것이 없으면 added는 0이다", async () => {
+    const body = await (await formatDefaults.POST(request("POST"))).json();
+    expect(body.added).toBe(0);
+    expect(body.formats).toHaveLength(7);
+  });
+
+  test("요청 본문 없이도 받는다", async () => {
+    const res = await formatDefaults.POST(
+      new Request("http://localhost/api/formats/defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(200);
   });
 });
 
@@ -128,6 +175,7 @@ describe("JSON이 아닌 요청은 415", () => {
   const cases: [string, (req: Request) => Promise<Response>][] = [
     ["POST /api/formats", (r) => formats.POST(r)],
     ["PUT /api/formats/[id]", (r) => formatItem.PUT(r, ctx("chat"))],
+    ["POST /api/formats/defaults", (r) => formatDefaults.POST(r)],
     ["POST /api/history", (r) => history.POST(r)],
     ["PATCH /api/history/[id]", (r) => historyItem.PATCH(r, ctx("x"))],
   ];
@@ -143,7 +191,10 @@ describe("JSON이 아닌 요청은 415", () => {
 
   test("415를 돌려준 요청은 데이터를 바꾸지 않는다", async () => {
     await formats.POST(plain("POST"));
-    expect((await (await formats.GET()).json()).length).toBe(3);
+    expect((await (await formats.GET()).json()).length).toBe(7);
+    await formatItem.DELETE(request("DELETE"), ctx("jira"));
+    await formatDefaults.POST(plain("POST"));
+    expect((await (await formats.GET()).json()).length).toBe(6);
   });
 
   test("charset이 붙은 application/json은 받는다", async () => {

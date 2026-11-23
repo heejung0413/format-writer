@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 import * as formatItem from "@/app/api/formats/[id]/route";
+import * as formatDefaults from "@/app/api/formats/defaults/route";
 import * as formats from "@/app/api/formats/route";
 import * as generate from "@/app/api/generate/route";
 import * as historyItem from "@/app/api/history/[id]/route";
@@ -16,6 +17,7 @@ type Handler = (req: Request, ctx: Context) => Response | Promise<Response>;
 const ROUTES: { method: string; pattern: RegExp; handler: Handler }[] = [
   { method: "GET", pattern: /^\/api\/formats$/, handler: () => formats.GET() },
   { method: "POST", pattern: /^\/api\/formats$/, handler: (req) => formats.POST(req) },
+  { method: "POST", pattern: /^\/api\/formats\/defaults$/, handler: (req) => formatDefaults.POST(req) },
   { method: "PUT", pattern: /^\/api\/formats\/([^/]+)$/, handler: formatItem.PUT },
   { method: "DELETE", pattern: /^\/api\/formats\/([^/]+)$/, handler: formatItem.DELETE },
   { method: "POST", pattern: /^\/api\/generate$/, handler: (req) => generate.POST(req) },

@@ -19,6 +19,7 @@ vi.mock("next/server", async (importOriginal) => ({
 const h = setupHarness();
 
 const MAIL_INSTRUCTION = "첫 줄에 '제목: ...'을 쓴다.";
+const DEFAULT_NAMES = ["메일", "채팅", "보고", "Jira 코멘트", "MR 본문", "리뷰 답글", "주간 보고"];
 const CHAT_INSTRUCTION = "업무 메신저에 바로 보낼 수 있는 짧은 글로 쓴다.";
 
 async function openManager(user: User) {
@@ -51,15 +52,15 @@ describe("나만의 포맷", () => {
     await user.type(screen.getByPlaceholderText(/예시 글/), "이번 주 요약\n- 완료: 로그인");
     await user.click(screen.getByRole("button", { name: "추가" }));
 
-    await waitFor(() => expect(formatNames()).toEqual(["메일", "채팅", "보고", "주간보고"]));
+    await waitFor(() => expect(formatNames()).toEqual([...DEFAULT_NAMES, "주간보고"]));
     const saved = await h.readJson<Format[]>("formats.json");
-    expect(saved).toHaveLength(4);
-    expect(saved[3]).toMatchObject({
+    expect(saved).toHaveLength(8);
+    expect(saved[7]).toMatchObject({
       name: "주간보고",
       instruction: "표로 정리하고 마지막에 다음 주 계획을 쓴다.",
       example: "이번 주 요약\n- 완료: 로그인",
     });
-    expect(saved[3].id).toBeTruthy();
+    expect(saved[7].id).toBeTruthy();
 
     await closeManager(user);
     await choose(user, "포맷", "주간보고");
@@ -70,7 +71,7 @@ describe("나만의 포맷", () => {
     expect(system).toContain("포맷 지시: 표로 정리하고 마지막에 다음 주 계획을 쓴다.");
     expect(system).toContain("<예시>\n이번 주 요약\n- 완료: 로그인\n</예시>");
     const [item] = await h.readJson<HistoryItem[]>("history.json");
-    expect(item).toMatchObject({ formatId: saved[3].id, formatName: "주간보고" });
+    expect(item).toMatchObject({ formatId: saved[7].id, formatName: "주간보고" });
   });
 
   test("포맷을 수정하면 formats.json과 목록이 바뀌고 새 지시문으로 글을 쓴다", async () => {
@@ -85,9 +86,9 @@ describe("나만의 포맷", () => {
     await user.type(instruction, "두 문장으로만 쓴다.");
     await user.click(screen.getByRole("button", { name: "수정 저장" }));
 
-    await waitFor(() => expect(formatNames()).toEqual(["메일", "메신저", "보고"]));
+    await waitFor(() => expect(formatNames().slice(0, 3)).toEqual(["메일", "메신저", "보고"]));
     const saved = await h.readJson<Format[]>("formats.json");
-    expect(saved.map((f) => f.id)).toEqual(["mail", "chat", "report"]);
+    expect(saved.map((f) => f.id).slice(0, 3)).toEqual(["mail", "chat", "report"]);
     expect(saved[1]).toMatchObject({ id: "chat", name: "메신저", instruction: "두 문장으로만 쓴다." });
     expect(saved[0].name).toBe("메일");
 
@@ -104,8 +105,15 @@ describe("나만의 포맷", () => {
     await openManager(user);
     await user.click(managerRow("메일").getByRole("button", { name: "삭제" }));
 
-    await waitFor(() => expect(formatNames()).toEqual(["채팅", "보고"]));
-    expect((await h.readJson<Format[]>("formats.json")).map((f) => f.id)).toEqual(["chat", "report"]);
+    await waitFor(() => expect(formatNames()).toEqual(DEFAULT_NAMES.slice(1)));
+    expect((await h.readJson<Format[]>("formats.json")).map((f) => f.id)).toEqual([
+      "chat",
+      "report",
+      "jira",
+      "mr",
+      "review",
+      "weekly",
+    ]);
     expect(screen.getByLabelText("포맷")).toHaveValue("chat");
 
     await closeManager(user);
@@ -119,12 +127,62 @@ describe("나만의 포맷", () => {
   });
 });
 
+describe("기본 포맷 불러오기", () => {
+  const OLD = [
+    { id: "mail", name: "메일", instruction: "내가 고친 메일 지시" },
+    { id: "chat", name: "채팅", instruction: "c" },
+    { id: "report", name: "보고", instruction: "r" },
+    { id: "mine", name: "내 포맷", instruction: "내 지시" },
+  ];
+
+  test("예전부터 쓰던 formats.json에는 새 기본 포맷이 자동으로 들어가지 않는다", async () => {
+    await h.writeJson("formats.json", OLD);
+    await openHome();
+    expect(formatNames()).toEqual(["메일", "채팅", "보고", "내 포맷"]);
+    expect(await h.readJson<Format[]>("formats.json")).toEqual(OLD);
+  });
+
+  test("버튼을 누르면 없는 기본 포맷만 끝에 붙고 고친 포맷은 그대로이며 파일에 반영된다", async () => {
+    await h.writeJson("formats.json", OLD);
+    const { user } = await openHome();
+    await openManager(user);
+    await user.click(screen.getByRole("button", { name: "기본 포맷 불러오기" }));
+
+    expect(await screen.findByText("기본 포맷 4개를 추가했습니다.")).toBeInTheDocument();
+    expect(formatNames()).toEqual(["메일", "채팅", "보고", "내 포맷", "Jira 코멘트", "MR 본문", "리뷰 답글", "주간 보고"]);
+    const saved = await h.readJson<Format[]>("formats.json");
+    expect(saved.map((f) => f.id)).toEqual(["mail", "chat", "report", "mine", "jira", "mr", "review", "weekly"]);
+    expect(saved[0].instruction).toBe("내가 고친 메일 지시");
+
+    await user.click(screen.getByRole("button", { name: "기본 포맷 불러오기" }));
+    expect(await screen.findByText("추가할 기본 포맷이 없습니다.")).toBeInTheDocument();
+    expect(await h.readJson<Format[]>("formats.json")).toEqual(saved);
+  });
+
+  test("지웠던 기본 포맷을 되살리면 선택해서 그 지시문으로 글을 쓸 수 있다", async () => {
+    const { user } = await openHome();
+    await openManager(user);
+    await user.click(managerRow("Jira 코멘트").getByRole("button", { name: "삭제" }));
+    await waitFor(() => expect(formatNames()).not.toContain("Jira 코멘트"));
+    await user.click(screen.getByRole("button", { name: "기본 포맷 불러오기" }));
+    expect(await screen.findByText("기본 포맷 1개를 추가했습니다.")).toBeInTheDocument();
+    expect(formatNames()).toEqual([...DEFAULT_NAMES.filter((n) => n !== "Jira 코멘트"), "Jira 코멘트"]);
+
+    await closeManager(user);
+    await choose(user, "포맷", "Jira 코멘트");
+    await generate(user, "로그인 오류를 고쳤다");
+    const { system } = h.claude.runs[0];
+    expect(system).toContain("포맷: Jira 코멘트");
+    expect(system).toContain("ㅁ 문제 원인");
+  });
+});
+
 describe("깨진 데이터 파일", () => {
-  test("formats.json이 깨져 있어도 기본 포맷 3개로 시작하고 깨진 파일은 따로 보관한다", async () => {
+  test("formats.json이 깨져 있어도 기본 포맷 7개로 시작하고 깨진 파일은 따로 보관한다", async () => {
     await h.writeRaw("formats.json", "{ 깨진 json");
     const { user } = await openHome();
 
-    expect(formatNames()).toEqual(["메일", "채팅", "보고"]);
+    expect(formatNames()).toEqual(DEFAULT_NAMES);
     const files = await h.files();
     const broken = files.filter((f) => f.startsWith("formats.json.broken-"));
     expect(broken).toHaveLength(1);
@@ -132,6 +190,10 @@ describe("깨진 데이터 파일", () => {
       "mail",
       "chat",
       "report",
+      "jira",
+      "mr",
+      "review",
+      "weekly",
     ]);
 
     await generate(user, "내일 회의를 미룹니다");

@@ -270,3 +270,57 @@ describe("FormatManager 삭제", () => {
     expect(screen.getByPlaceholderText(namePlaceholder)).toHaveValue("메일");
   });
 });
+
+describe("FormatManager 기본 포맷 불러오기", () => {
+  const jira: Format = { id: "jira", name: "Jira 코멘트", instruction: "j" };
+  const load = () => screen.getByRole("button", { name: "기본 포맷 불러오기" });
+
+  test("누르면 POST /api/formats/defaults로 JSON 요청을 보내고 받은 목록으로 onChange를 부른다", async () => {
+    fetchMock.mockResolvedValueOnce(respond({ formats: [mail, chat, jira], added: 1 }));
+    const h = setup();
+    await userEvent.click(load());
+
+    await vi.waitFor(() => expect(h.onChange).toHaveBeenCalledOnce());
+    const call = lastCall();
+    expect(call.url).toBe("/api/formats/defaults");
+    expect(call.init.method).toBe("POST");
+    expect(call.init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(h.onChange).toHaveBeenCalledWith([mail, chat, jira]);
+    expect(await screen.findByText("기본 포맷 1개를 추가했습니다.")).toBeInTheDocument();
+  });
+
+  test("추가할 것이 없으면 그렇게 알려 준다", async () => {
+    fetchMock.mockResolvedValueOnce(respond({ formats: [mail, chat], added: 0 }));
+    setup();
+    await userEvent.click(load());
+    expect(await screen.findByText("추가할 기본 포맷이 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByText(/개를 추가했습니다/)).not.toBeInTheDocument();
+  });
+
+  test("실패하면 오류를 보여 주고 onChange를 부르지 않는다", async () => {
+    fetchMock.mockResolvedValueOnce(respond({ error: { message: "서버 오류" } }, 500));
+    const h = setup();
+    await userEvent.click(load());
+    expect(await screen.findByText("서버 오류")).toBeInTheDocument();
+    expect(h.onChange).not.toHaveBeenCalled();
+  });
+
+  test("응답이 JSON이 아니면 기본 오류 문구를 보여 준다", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("oops", { status: 500 }));
+    setup();
+    await userEvent.click(load());
+    expect(await screen.findByText("기본 포맷을 불러오지 못했습니다.")).toBeInTheDocument();
+  });
+
+  test("이전 결과 문구는 다시 누르면 새 결과로 바뀐다", async () => {
+    fetchMock
+      .mockResolvedValueOnce(respond({ formats: [mail, chat, jira], added: 1 }))
+      .mockResolvedValueOnce(respond({ formats: [mail, chat, jira], added: 0 }));
+    setup();
+    await userEvent.click(load());
+    await screen.findByText("기본 포맷 1개를 추가했습니다.");
+    await userEvent.click(load());
+    expect(await screen.findByText("추가할 기본 포맷이 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("기본 포맷 1개를 추가했습니다.")).not.toBeInTheDocument();
+  });
+});
