@@ -16,6 +16,13 @@ export function toErrorLine(err: unknown): ErrorLine {
       message: "요청이 많습니다. 잠시 후 다시 시도해 주세요.",
     };
   }
+  if (err instanceof Anthropic.APIConnectionError) {
+    return {
+      type: "error",
+      code: "api_error",
+      message: "네트워크 연결에 실패했습니다. 연결을 확인하고 다시 시도해 주세요.",
+    };
+  }
   if (err instanceof Anthropic.APIError) {
     const status = err.status ? ` (${err.status})` : "";
     return {
@@ -25,7 +32,14 @@ export function toErrorLine(err: unknown): ErrorLine {
     };
   }
   if (err instanceof Anthropic.AnthropicError) {
-    return { type: "error", code: "auth", message: AUTH_MESSAGE };
+    if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+      return { type: "error", code: "auth", message: AUTH_MESSAGE };
+    }
+    return {
+      type: "error",
+      code: "api_error",
+      message: "작성이 중간에 끊겼습니다. 다시 시도해 주세요.",
+    };
   }
   return {
     type: "error",

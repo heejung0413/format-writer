@@ -25,8 +25,10 @@ export async function* streamClaude(args: {
       { signal },
     );
 
+    let hasText = false;
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        if (event.delta.text.trim()) hasText = true;
         yield { type: "text", text: event.delta.text };
       }
     }
@@ -34,6 +36,14 @@ export async function* streamClaude(args: {
     const final = await stream.finalMessage();
     if (final.stop_reason === "refusal") {
       yield { type: "error", code: "refusal", message: "이 내용은 작성할 수 없습니다." };
+      return;
+    }
+    if (final.stop_reason === "max_tokens" || !hasText) {
+      yield {
+        type: "error",
+        code: "api_error",
+        message: "글이 끝까지 작성되지 않았습니다. 다시 시도해 주세요.",
+      };
       return;
     }
     yield { type: "done" };
