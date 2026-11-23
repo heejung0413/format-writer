@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 포맷 글 작성기
 
-## Getting Started
+내용을 입력하고 포맷(메일, 채팅 등)을 고르면 Claude가 그 포맷에 맞는 글을 써 주는 개인용 웹사이트입니다. 내 컴퓨터에서만 실행합니다.
 
-First, run the development server:
+## 실행
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # ANTHROPIC_API_KEY에 키 입력
+npm install
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+API 키는 https://console.anthropic.com 에서 발급합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 쓰는 법
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. 포맷, 받는 사람, 말투를 고릅니다.
+2. 내용을 적고 **작성하기**를 누릅니다.
+3. 결과가 마음에 안 들면 **더 짧게** 같은 버튼이나 수정 지시로 다듬습니다.
+4. **포맷 관리**에서 나만의 포맷을 추가합니다. 예시 글을 넣으면 그 구성을 따라 씁니다.
 
-## Learn More
+## 데이터
 
-To learn more about Next.js, take a look at the following resources:
+포맷과 작성 기록은 `data/formats.json`, `data/history.json`에 저장됩니다. 이 폴더와 `.env.local`은 git에 올라가지 않습니다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 개발
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm test            # 단위 테스트
+npm run typecheck   # 타입 검사
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+모델을 바꾸려면 `.env.local`의 `CLAUDE_MODEL`에 모델 ID를 넣습니다. 기본값은 `claude-opus-5-5`입니다.
