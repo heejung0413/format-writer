@@ -1,0 +1,127 @@
+#!/usr/bin/env node
+// E2E 전용 가짜 `claude` 실행 파일. 진짜 Claude Code CLI 대신 PATH 앞쪽에 두어 서버가 이 파일을 실행하게 한다.
+// 입력(stdin)에 들어 있는 표시 단어로 동작을 고르고, 호출마다 E2E_FAKE_LOG 파일에 한 줄씩 기록한다.
+//   [[SLOW]]          아주 긴 글을 천천히 흘려보낸다 (중단 시험용)
+//   [[ERROR:사유]]    is_error 결과와 사유를 내고 종료 코드 1로 끝낸다
+//   [[EXIT]]          stderr에만 메시지를 쓰고 종료 코드 2로 끝낸다
+//   [[REFUSE]]        stop_reason이 refusal인 결과를 낸다
+//   [[FLAKY]]         처음 한 번은 실패하고 두 번째부터 성공한다 (횟수는 E2E_FAKE_STATE_DIR 아래 파일에 저장)
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+
+const logPath = process.env.E2E_FAKE_LOG;
+const stateDir = process.env.E2E_FAKE_STATE_DIR;
+
+function log(entry) {
+  if (logPath) fs.appendFileSync(logPath, JSON.stringify({ at: Date.now(), pid: process.pid, ...entry }) + "\n");
+}
+
+process.stdout.on("error", () => process.exit(0));
+
+process.on("SIGTERM", () => {
+  log({ event: "sigterm" });
+  process.exit(143);
+});
+
+function delta(text) {
+  process.stdout.write(
+    JSON.stringify({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text } },
+    }) + "\n",
+  );
+}
+
+function result(fields) {
+  process.stdout.write(
+    JSON.stringify({ type: "result", subtype: "success", is_error: false, stop_reason: "end_turn", ...fields }) + "\n",
+  );
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function systemPromptOf(argv) {
+  const index = argv.indexOf("--system-prompt");
+  return index >= 0 ? (argv[index + 1] ?? "") : "";
+}
+
+function field(system, label) {
+  const match = system.match(new RegExp(`^${label}: (.*)$`, "m"));
+  return match ? match[1].trim() : null;
+}
+
+function flakyAttempt(stdin) {
+  if (!stateDir) return 2;
+  fs.mkdirSync(stateDir, { recursive: true });
+  const file = path.join(stateDir, `flaky-${crypto.createHash("sha1").update(stdin).digest("hex")}`);
+  const count = (fs.existsSync(file) ? Number(fs.readFileSync(file, "utf8")) : 0) + 1;
+  fs.writeFileSync(file, String(count));
+  return count;
+}
+
+async function stream(text, delay) {
+  for (let i = 0; i < text.length; i += 6) {
+    delta(text.slice(i, i + 6));
+    await sleep(delay);
+  }
+}
+
+async function main(stdin) {
+  const argv = process.argv.slice(2);
+  const system = systemPromptOf(argv);
+  const leaked = Object.keys(process.env).filter(
+    (key) => key.startsWith("ANTHROPIC_") || (key.startsWith("CLAUDE") && key !== "CLAUDE_CONFIG_DIR"),
+  );
+  log({ event: "invoke", argv, stdin, system, leakedEnvKeys: leaked });
+
+  const marker = (name) => stdin.includes(`[[${name}]]`);
+  const errorMatch = stdin.match(/\[\[ERROR:([^\]]*)\]\]/);
+
+  if (marker("EXIT")) {
+    process.stderr.write("fake claude: 로그인이 필요합니다 (e2e)");
+    process.exit(2);
+  }
+  if (errorMatch) {
+    result({ is_error: true, result: errorMatch[1] });
+    process.exit(1);
+  }
+  if (marker("REFUSE")) {
+    result({ stop_reason: "refusal", result: "" });
+    return;
+  }
+  if (marker("FLAKY") && flakyAttempt(stdin) === 1) {
+    result({ is_error: true, result: "일시적인 오류 (e2e)" });
+    process.exit(1);
+  }
+  if (marker("SLOW")) {
+    await stream("천천히 쓰는 중입니다. ".repeat(400), 100);
+    result({ result: "" });
+    return;
+  }
+
+  const format = field(system, "포맷") ?? "?";
+  const recipient = field(system, "받는 사람") ?? "없음";
+  const tone = (field(system, "말투") ?? "?").split(" ")[0];
+  const instructions = [...stdin.matchAll(/<수정 지시>\n([\s\S]*?)\n<\/수정 지시>/g)].map((m) => m[1]);
+  const original = (stdin.match(/<원문>\n([\s\S]*?)\n<\/원문>/)?.[1] ?? stdin).trim();
+  const head = `[${format}/${recipient}/${tone}]`;
+  const text =
+    instructions.length > 0
+      ? `${head} 수정 ${instructions.length}회 (${instructions[instructions.length - 1]})\n${original}`
+      : `${head}\n${original}`;
+  await stream(text, 120);
+  result({ result: text });
+}
+
+const chunks = [];
+process.stdin.on("data", (chunk) => chunks.push(chunk));
+process.stdin.on("end", () => {
+  main(Buffer.concat(chunks).toString("utf8")).then(
+    () => process.exit(0),
+    (err) => {
+      process.stderr.write(String(err));
+      process.exit(1);
+    },
+  );
+});
