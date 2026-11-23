@@ -12,6 +12,14 @@ import type { ChatMessage, Format, HistoryItem } from "@/lib/types";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const INTERRUPTED = "작성이 중간에 끊겼습니다.";
+const LOAD_FAILED = "저장된 포맷과 기록을 불러오지 못했습니다.";
+
+function fetchSaved(): Promise<[Format[], HistoryItem[]]> {
+  return Promise.all([
+    fetch("/api/formats").then((r) => r.json() as Promise<Format[]>),
+    fetch("/api/history").then((r) => r.json() as Promise<HistoryItem[]>),
+  ]);
+}
 
 export default function Home() {
   const [formats, setFormats] = useState<Format[]>([]);
@@ -29,17 +37,16 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<{ messages: ChatMessage[]; refine: boolean } | null>(null);
 
+  function applyLoaded([formatList, historyList]: [Format[], HistoryItem[]]) {
+    setFormats(formatList);
+    setHistory(historyList);
+    setFormatId((current) => current || formatList[0]?.id || "");
+  }
+
   useEffect(() => {
-    async function load() {
-      const [formatList, historyList] = await Promise.all([
-        fetch("/api/formats").then((r) => r.json() as Promise<Format[]>),
-        fetch("/api/history").then((r) => r.json() as Promise<HistoryItem[]>),
-      ]);
-      setFormats(formatList);
-      setHistory(historyList);
-      setFormatId((current) => current || formatList[0]?.id || "");
-    }
-    load().catch(() => setError("저장된 포맷과 기록을 불러오지 못했습니다."));
+    fetchSaved()
+      .then(applyLoaded)
+      .catch(() => setError(LOAD_FAILED));
   }, []);
 
   async function saveHistory(text: string, refine: boolean) {
@@ -133,7 +140,14 @@ export default function Home() {
 
   function retry() {
     const last = lastRunRef.current;
-    if (last) run(last.messages, last.refine);
+    if (last) {
+      run(last.messages, last.refine);
+      return;
+    }
+    setError(null);
+    fetchSaved()
+      .then(applyLoaded)
+      .catch(() => setError(LOAD_FAILED));
   }
 
   function restore(item: HistoryItem) {

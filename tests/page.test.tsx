@@ -171,9 +171,7 @@ describe("Home 초기 로드", () => {
     expect(screen.queryByRole("option", { name: "메일" })).not.toBeInTheDocument();
   });
 
-  // BUG: 불러오기 오류 배너의 "다시 시도"는 마지막 생성 요청만 되풀이하므로(app/page.tsx:134-137)
-  // 생성한 적이 없으면 아무 일도 하지 않고, 포맷과 기록을 다시 불러오지 않는다.
-  test.fails("불러오기 오류의 다시 시도는 포맷과 기록을 다시 불러온다", async () => {
+  test("불러오기 오류의 다시 시도는 포맷과 기록을 다시 불러온다", async () => {
     let failing = true;
     backend.formatsResponse = () => {
       if (failing) throw new TypeError("network down");
