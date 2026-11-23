@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -117,5 +117,61 @@ describe("history", () => {
     expect(history).toHaveLength(HISTORY_LIMIT);
     expect(history[0].input).toBe(`입력 ${HISTORY_LIMIT + 1}`);
     expect(history[HISTORY_LIMIT - 1].input).toBe("입력 2");
+  });
+});
+
+describe("동시 실행", () => {
+  test("addHistory 20개를 동시에 불러도 모두 남는다", async () => {
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) => addHistory({ ...entry, input: `입력 ${i}` })),
+    );
+    const history = await listHistory();
+    expect(history).toHaveLength(20);
+    expect(new Set(history.map((h) => h.input)).size).toBe(20);
+  });
+
+  test("빈 폴더에서 listFormats를 동시에 불러도 모두 기본 3개를 받는다", async () => {
+    const results = await Promise.all(Array.from({ length: 8 }, () => listFormats()));
+    for (const formats of results) expect(formats.map((f) => f.id)).toEqual(["mail", "chat", "report"]);
+    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toHaveLength(3);
+  });
+
+  test("쓰는 도중의 파일을 읽지 않도록 임시 파일을 거쳐 저장한다", async () => {
+    await Promise.all([
+      ...Array.from({ length: 10 }, (_, i) => addHistory({ ...entry, input: `입력 ${i}` })),
+      ...Array.from({ length: 10 }, () => listHistory()),
+    ]);
+    expect(await listHistory()).toHaveLength(10);
+    expect((await readdir(dir)).filter((n) => n.includes(".tmp"))).toEqual([]);
+  });
+});
+
+describe("깨진 파일", () => {
+  const brokenFiles = async () => (await readdir(dir)).filter((n) => n.includes(".broken-"));
+
+  test("formats.json이 올바른 JSON이 아니면 따로 치워 두고 기본 포맷으로 다시 만든다", async () => {
+    await writeFile(path.join(dir, "formats.json"), "{ not json", "utf8");
+    const formats = await listFormats();
+    expect(formats.map((f) => f.id)).toEqual(["mail", "chat", "report"]);
+    const broken = await brokenFiles();
+    expect(broken).toHaveLength(1);
+    expect(broken[0]).toMatch(/^formats\.json\.broken-/);
+    expect(await readFile(path.join(dir, broken[0]), "utf8")).toBe("{ not json");
+    expect(JSON.parse(await readFile(path.join(dir, "formats.json"), "utf8"))).toHaveLength(3);
+  });
+
+  test("history.json이 배열이 아니면 따로 치워 두고 빈 목록으로 시작한다", async () => {
+    await writeFile(path.join(dir, "history.json"), '{"a":1}', "utf8");
+    expect(await listHistory()).toEqual([]);
+    expect(await brokenFiles()).toHaveLength(1);
+    expect(JSON.parse(await readFile(path.join(dir, "history.json"), "utf8"))).toEqual([]);
+    await addHistory(entry);
+    expect(await listHistory()).toHaveLength(1);
+  });
+
+  test("깨진 history.json에 쓰기를 해도 실패하지 않는다", async () => {
+    await writeFile(path.join(dir, "history.json"), "garbage", "utf8");
+    await addHistory(entry);
+    expect(await listHistory()).toHaveLength(1);
   });
 });

@@ -46,4 +46,19 @@ describe("readStreamLines", () => {
   test("빈 스트림이면 아무것도 내지 않는다", async () => {
     expect(await collect(streamOf([]))).toEqual([]);
   });
+
+  test("소비자가 중간에 멈추면 reader 잠금을 푼다", async () => {
+    const stream = streamOf([encoder.encode('{"type":"text","text":"가"}\n{"type":"done"}\n')]);
+    for await (const line of readStreamLines(stream)) {
+      expect(line).toEqual({ type: "text", text: "가" });
+      break;
+    }
+    expect(stream.locked).toBe(false);
+  });
+
+  test("줄 해석에 실패해도 reader 잠금을 푼다", async () => {
+    const stream = streamOf([encoder.encode("not json\n")]);
+    await expect(collect(stream)).rejects.toThrow();
+    expect(stream.locked).toBe(false);
+  });
 });
