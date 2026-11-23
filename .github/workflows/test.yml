@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # package-lock.json은 npm 11로 만들었다. Node 22에 딸린 npm 10은 같은 파일을 "sync 안 됨"으로 거절한다.
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
@@ -38,6 +40,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # package-lock.json은 npm 11로 만들었다. Node 22에 딸린 npm 10은 같은 파일을 "sync 안 됨"으로 거절한다.
+      - run: npm install -g npm@11
       - run: npm ci
       # 러너에 설치된 Google Chrome을 쓴다(playwright.config.ts의 channel: "chrome").
       # Claude는 e2e/bin/claude 가짜 실행 파일로 대체되므로 키나 로그인 없이 돈다.
