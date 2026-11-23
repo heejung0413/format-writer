@@ -6,7 +6,7 @@ import { HistoryList } from "@/components/HistoryList";
 import { InputPanel } from "@/components/InputPanel";
 import { OptionBar } from "@/components/OptionBar";
 import { ResultPanel } from "@/components/ResultPanel";
-import { RECIPIENTS, TONES } from "@/lib/defaults";
+import { LENGTHS, RECIPIENTS, TONES } from "@/lib/defaults";
 import { readStreamLines } from "@/lib/ndjson";
 import type { ChatMessage, Format, HistoryItem } from "@/lib/types";
 
@@ -27,6 +27,7 @@ export default function Home() {
   const [formatId, setFormatId] = useState("");
   const [recipient, setRecipient] = useState<string>(RECIPIENTS[0]);
   const [tone, setTone] = useState<string>(TONES[1]);
+  const [length, setLength] = useState<string>(LENGTHS[1]);
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -70,6 +71,7 @@ export default function Home() {
         formatName: format?.name ?? "",
         recipient,
         tone,
+        length,
         input: input.trim(),
         output: text,
       }),
@@ -95,7 +97,7 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: JSON_HEADERS,
-        body: JSON.stringify({ input, formatId, recipient, tone, messages: nextMessages }),
+        body: JSON.stringify({ input, formatId, recipient, tone, length, messages: nextMessages }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -155,6 +157,7 @@ export default function Home() {
     setOutput(item.output);
     setRecipient(item.recipient);
     setTone(item.tone);
+    setLength(item.length && LENGTHS.some((l) => l === item.length) ? item.length : LENGTHS[1]);
     if (formats.some((f) => f.id === item.formatId)) setFormatId(item.formatId);
     setMessages([
       { role: "user", content: item.input },
@@ -186,10 +189,12 @@ export default function Home() {
           formatId={formatId}
           recipient={recipient}
           tone={tone}
+          length={length}
           disabled={busy}
           onFormatChange={setFormatId}
           onRecipientChange={setRecipient}
           onToneChange={setTone}
+          onLengthChange={setLength}
           onManage={() => setShowManager(true)}
         />
         <InputPanel

@@ -15,6 +15,7 @@ function setup(overrides: Partial<Parameters<typeof OptionBar>[0]> = {}) {
     onFormatChange: vi.fn(),
     onRecipientChange: vi.fn(),
     onToneChange: vi.fn(),
+    onLengthChange: vi.fn(),
     onManage: vi.fn(),
   };
   render(
@@ -23,6 +24,7 @@ function setup(overrides: Partial<Parameters<typeof OptionBar>[0]> = {}) {
       formatId="mail"
       recipient="없음"
       tone="보통"
+      length="보통"
       disabled={false}
       {...handlers}
       {...overrides}
@@ -40,7 +42,7 @@ describe("OptionBar", () => {
     expect(select).toHaveValue("chat");
   });
 
-  test("받는 사람과 말투 선택지를 모두 보여 준다", () => {
+  test("받는 사람, 말투, 길이 선택지를 모두 보여 준다", () => {
     setup();
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
       "메일",
@@ -52,7 +54,11 @@ describe("OptionBar", () => {
       "격식",
       "보통",
       "편하게",
+      "짧게",
+      "보통",
+      "자세히",
     ]);
+    expect(screen.getByLabelText("길이")).toHaveValue("보통");
     expect(screen.getByLabelText("받는 사람")).toHaveValue("없음");
     expect(screen.getByLabelText("말투")).toHaveValue("보통");
   });
@@ -75,17 +81,32 @@ describe("OptionBar", () => {
     expect(h.onToneChange).toHaveBeenCalledExactlyOnceWith("격식");
   });
 
+  test("길이를 바꾸면 onLengthChange를 부른다", async () => {
+    const h = setup();
+    await userEvent.selectOptions(screen.getByLabelText("길이"), "자세히");
+    expect(h.onLengthChange).toHaveBeenCalledExactlyOnceWith("자세히");
+  });
+
+  test("길이 선택창은 말투 선택창 바로 다음에 있다", () => {
+    setup();
+    const selects = screen.getAllByRole("combobox");
+    expect(selects).toHaveLength(4);
+    expect(selects[2]).toBe(screen.getByLabelText("말투"));
+    expect(selects[3]).toBe(screen.getByLabelText("길이"));
+  });
+
   test("포맷 관리 버튼을 누르면 onManage를 부른다", async () => {
     const h = setup();
     await userEvent.click(screen.getByRole("button", { name: "포맷 관리" }));
     expect(h.onManage).toHaveBeenCalledOnce();
   });
 
-  test("disabled이면 세 선택창이 모두 잠기고 포맷 관리는 눌린다", () => {
+  test("disabled이면 네 선택창이 모두 잠기고 포맷 관리는 눌린다", () => {
     setup({ disabled: true });
     expect(screen.getByLabelText("포맷")).toBeDisabled();
     expect(screen.getByLabelText("받는 사람")).toBeDisabled();
     expect(screen.getByLabelText("말투")).toBeDisabled();
+    expect(screen.getByLabelText("길이")).toBeDisabled();
     expect(screen.getByRole("button", { name: "포맷 관리" })).toBeEnabled();
   });
 
@@ -94,5 +115,6 @@ describe("OptionBar", () => {
     expect(screen.getByLabelText("포맷")).toBeEnabled();
     expect(screen.getByLabelText("받는 사람")).toBeEnabled();
     expect(screen.getByLabelText("말투")).toBeEnabled();
+    expect(screen.getByLabelText("길이")).toBeEnabled();
   });
 });

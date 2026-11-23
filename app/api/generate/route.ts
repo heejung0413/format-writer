@@ -1,5 +1,5 @@
 import { streamClaude } from "@/lib/provider";
-import { RECIPIENTS, TONES } from "@/lib/defaults";
+import { LENGTHS, RECIPIENTS, TONES } from "@/lib/defaults";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { readJsonBody } from "@/lib/request";
 import { listFormats } from "@/lib/store";
@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     format,
     recipient: pick(body.recipient, RECIPIENTS, "없음"),
     tone: pick(body.tone, TONES, "보통"),
+    length: pick(body.length, LENGTHS, "보통"),
   });
   const history = toMessages(body.messages);
   const messages: ChatMessage[] = history.length ? history : [{ role: "user", content: input }];

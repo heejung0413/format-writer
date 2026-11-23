@@ -29,7 +29,7 @@ export async function write(user: User, notes: string) {
 
 export const submit = (user: User) => user.click(screen.getByRole("button", { name: "작성하기" }));
 
-export async function choose(user: User, label: "포맷" | "받는 사람" | "말투", value: string) {
+export async function choose(user: User, label: "포맷" | "받는 사람" | "말투" | "길이", value: string) {
   await user.selectOptions(screen.getByLabelText(label), value);
 }
 

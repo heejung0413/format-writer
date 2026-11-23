@@ -161,6 +161,69 @@ describe("글 작성", () => {
   });
 });
 
+describe("길이 옵션", () => {
+  test("짧게를 고르면 지시문에 길이 줄이 들어가고 기록에 length가 저장된다", async () => {
+    const { user } = await openHome();
+    await choose(user, "길이", "짧게");
+    await generateOnce(user);
+    expect(h.claude.runs[0].system).toContain("길이: 짧게 (핵심만 남겨 가능한 한 짧게 쓴다)");
+    const [saved] = await h.readJson<HistoryItem[]>("history.json");
+    expect(saved.length).toBe("짧게");
+  });
+
+  test("자세히를 고르면 자세히 쓰라는 줄이 들어간다", async () => {
+    const { user } = await openHome();
+    await choose(user, "길이", "자세히");
+    await generateOnce(user);
+    expect(h.claude.runs[0].system).toContain("길이: 자세히 (배경과 이유까지 풀어서 자세히 쓴다)");
+  });
+
+  test("기본값 보통에서는 지시문에 길이 줄이 없고 기록에는 보통이 남는다", async () => {
+    const { user } = await openHome();
+    await generateOnce(user);
+    expect(h.claude.runs[0].system).not.toContain("길이:");
+    const [saved] = await h.readJson<HistoryItem[]>("history.json");
+    expect(saved.length).toBe("보통");
+  });
+
+  test("기록을 다시 열면 길이가 복원되고 다듬기도 같은 길이로 보낸다", async () => {
+    const first = await openHome();
+    await choose(first.user, "길이", "자세히");
+    await generateOnce(first.user);
+    first.unmount();
+
+    const { user } = await openHome();
+    expect(screen.getByLabelText("길이")).toHaveValue("보통");
+    await user.click(await sidebar().findByRole("button", { name: new RegExp(NOTES) }));
+    expect(screen.getByLabelText("길이")).toHaveValue("자세히");
+
+    h.claude.script(reply("고친 글"));
+    await user.click(await screen.findByRole("button", { name: "더 짧게" }));
+    await waitFor(() => expect(resultText()).toBe("고친 글"));
+    expect(h.claude.runs[1].system).toContain("길이: 자세히");
+  });
+
+  test("length가 없는 예전 기록은 보통으로 열린다", async () => {
+    await h.writeJson("history.json", [
+      {
+        id: "old",
+        createdAt: "2026-11-01T00:00:00.000Z",
+        formatId: "mail",
+        formatName: "메일",
+        recipient: "없음",
+        tone: "보통",
+        input: "옛 메모",
+        output: "옛 글",
+      },
+    ]);
+    const { user } = await openHome();
+    await choose(user, "길이", "짧게");
+    await user.click(await sidebar().findByRole("button", { name: /옛 메모/ }));
+    expect(screen.getByLabelText("길이")).toHaveValue("보통");
+    expect(resultText()).toBe("옛 글");
+  });
+});
+
 describe("다시 열기와 삭제", () => {
   test("새로 열어도 기록이 남아 있고 누르면 복원되며 다듬기는 같은 기록을 고친다", async () => {
     const first = await openHome();

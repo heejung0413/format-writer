@@ -115,6 +115,18 @@ describe("POST /api/generate", () => {
     expect(calls[0].system).toContain("말투: 보통");
   });
 
+  test("길이를 받아 지시문에 넣고, 보통이거나 없거나 목록에 없으면 길이 줄을 넣지 않는다", async () => {
+    await (await post({ input: "내용", formatId: "mail", length: "짧게" })).text();
+    await (await post({ input: "내용", formatId: "mail", length: "자세히" })).text();
+    await (await post({ input: "내용", formatId: "mail", length: "보통" })).text();
+    await (await post({ input: "내용", formatId: "mail" })).text();
+    await (await post({ input: "내용", formatId: "mail", length: "엄청 길게" })).text();
+    await (await post({ input: "내용", formatId: "mail", length: 3 })).text();
+    expect(calls[0].system).toContain("길이: 짧게");
+    expect(calls[1].system).toContain("길이: 자세히");
+    for (const call of calls.slice(2)) expect(call.system).not.toContain("길이:");
+  });
+
   test("다듬기는 받은 대화를 그대로 보내고 형식이 틀린 항목은 버린다", async () => {
     const messages = [
       { role: "user", content: "내용" },

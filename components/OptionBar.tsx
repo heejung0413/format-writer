@@ -1,4 +1,4 @@
-import { RECIPIENTS, TONES } from "@/lib/defaults";
+import { LENGTHS, RECIPIENTS, TONES } from "@/lib/defaults";
 import type { Format } from "@/lib/types";
 
 type Props = {
@@ -6,10 +6,12 @@ type Props = {
   formatId: string;
   recipient: string;
   tone: string;
+  length: string;
   disabled: boolean;
   onFormatChange: (id: string) => void;
   onRecipientChange: (value: string) => void;
   onToneChange: (value: string) => void;
+  onLengthChange: (value: string) => void;
   onManage: () => void;
 };
 
@@ -60,6 +62,21 @@ export function OptionBar(props: Props) {
           {TONES.map((t) => (
             <option key={t} value={t}>
               {t}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-1.5 text-sm">
+        길이
+        <select
+          className={selectClass}
+          value={props.length}
+          disabled={props.disabled}
+          onChange={(e) => props.onLengthChange(e.target.value)}
+        >
+          {LENGTHS.map((l) => (
+            <option key={l} value={l}>
+              {l}
             </option>
           ))}
         </select>

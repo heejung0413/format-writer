@@ -6,12 +6,18 @@ const TONE_GUIDE: Record<string, string> = {
   편하게: "편하게 (가까운 사이에 쓰는 가벼운 말투로)",
 };
 
+const LENGTH_GUIDE: Record<string, string> = {
+  짧게: "짧게 (핵심만 남겨 가능한 한 짧게 쓴다)",
+  자세히: "자세히 (배경과 이유까지 풀어서 자세히 쓴다)",
+};
+
 export function buildSystemPrompt(args: {
   format: Format;
   recipient: string;
   tone: string;
+  length?: string;
 }): string {
-  const { format, recipient, tone } = args;
+  const { format, recipient, tone, length } = args;
   const lines = [
     "사용자가 적은 내용을 아래 포맷에 맞는 완성된 글로 다시 쓴다.",
     "",
@@ -27,6 +33,7 @@ export function buildSystemPrompt(args: {
   ];
   if (recipient !== "없음") lines.push(`받는 사람: ${recipient}`);
   lines.push(`말투: ${TONE_GUIDE[tone] ?? tone}`);
+  if (length && LENGTH_GUIDE[length]) lines.push(`길이: ${LENGTH_GUIDE[length]}`);
 
   const example = format.example?.trim();
   if (example) {

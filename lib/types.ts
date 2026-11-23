@@ -12,6 +12,7 @@ export type HistoryItem = {
   formatName: string;
   recipient: string;
   tone: string;
+  length?: string;
   input: string;
   output: string;
 };

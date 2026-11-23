@@ -222,6 +222,7 @@ describe("Home 작성", () => {
       formatName: "채팅",
       recipient: "상사",
       tone: "격식",
+      length: "보통",
       input: "내일 회의를 30분 미룹니다",
       output: "제목: 회의 연기 안내",
     });
@@ -244,9 +245,25 @@ describe("Home 작성", () => {
       formatId: "report",
       recipient: "고객",
       tone: "편하게",
+      length: "보통",
       messages: [{ role: "user", content: "메모 내용" }],
     });
     expect(call.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("길이를 고르면 생성 요청과 기록 저장 요청에 길이를 실어 보낸다", async () => {
+    const user = await renderLoaded();
+    await user.selectOptions(screen.getByLabelText("길이"), "짧게");
+    await writeAndSubmit(user);
+    await screen.findByText("기본 결과");
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+    expect(bodyOf<{ length: string }>(callsTo("/api/generate", "POST")[0]).length).toBe("짧게");
+    expect(bodyOf<{ length: string }>(callsTo("/api/history", "POST")[0]).length).toBe("짧게");
+  });
+
+  test("길이 기본값은 보통이다", async () => {
+    await renderLoaded();
+    expect(screen.getByLabelText("길이")).toHaveValue("보통");
   });
 
   test("받는 사람 기본값은 없음, 말투 기본값은 보통이다", async () => {
@@ -582,6 +599,34 @@ describe("Home 기록", () => {
     expect(screen.getAllByRole("listitem")[0]).toHaveClass("bg-blue-50");
     expect(screen.getAllByRole("listitem")[1]).not.toHaveClass("bg-blue-50");
     expect(screen.getByRole("button", { name: "더 짧게" })).toBeInTheDocument();
+  });
+
+  test("길이가 저장된 기록을 복원하면 길이 선택도 되돌리고 다듬기 요청에 그 길이를 쓴다", async () => {
+    backend.history = [historyItem({ length: "자세히" })];
+    const user = await renderLoaded();
+    await user.selectOptions(screen.getByLabelText("길이"), "짧게");
+    await user.click(await screen.findByRole("button", { name: /예전에 쓴 메모/ }));
+    expect(screen.getByLabelText("길이")).toHaveValue("자세히");
+
+    backend.generate = () => streamResponse([text("다듬은 글"), done]);
+    await user.click(screen.getByRole("button", { name: "더 짧게" }));
+    await screen.findByText("다듬은 글");
+    expect(bodyOf<{ length: string }>(callsTo("/api/generate", "POST")[0]).length).toBe("자세히");
+  });
+
+  test("길이가 없거나 알 수 없는 기록을 복원하면 길이는 보통이 된다", async () => {
+    backend.history = [
+      historyItem(),
+      historyItem({ id: "h-odd", input: "이상한 기록", length: "엄청 길게" }),
+    ];
+    const user = await renderLoaded();
+    await user.selectOptions(screen.getByLabelText("길이"), "짧게");
+    await user.click(await screen.findByRole("button", { name: /예전에 쓴 메모/ }));
+    expect(screen.getByLabelText("길이")).toHaveValue("보통");
+
+    await user.selectOptions(screen.getByLabelText("길이"), "자세히");
+    await user.click(screen.getByRole("button", { name: /이상한 기록/ }));
+    expect(screen.getByLabelText("길이")).toHaveValue("보통");
   });
 
   test("삭제된 포맷의 기록을 복원하면 포맷 선택은 그대로 둔다", async () => {

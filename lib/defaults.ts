@@ -2,6 +2,7 @@ import type { Format } from "./types";
 
 export const RECIPIENTS = ["없음", "상사", "동료", "고객"] as const;
 export const TONES = ["격식", "보통", "편하게"] as const;
+export const LENGTHS = ["짧게", "보통", "자세히"] as const;
 
 export const DEFAULT_FORMATS: Format[] = [
   {

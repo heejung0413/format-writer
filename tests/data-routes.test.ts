@@ -137,6 +137,18 @@ describe("/api/history", () => {
     expect(list).toEqual([created]);
   });
 
+  test("POST는 length가 문자열이면 저장하고, 없거나 문자열이 아니면 저장하지 않는다", async () => {
+    const withLength = await (await history.POST(request("POST", { ...entry, length: "짧게" }))).json();
+    expect(withLength.length).toBe("짧게");
+    const without = await (await history.POST(request("POST", entry))).json();
+    expect("length" in without).toBe(false);
+    const wrongType = await history.POST(request("POST", { ...entry, length: 3 }));
+    expect(wrongType.status).toBe(201);
+    expect("length" in (await wrongType.json())).toBe(false);
+    const list = await (await history.GET()).json();
+    expect(list.map((h: { length?: string }) => h.length)).toEqual([undefined, undefined, "짧게"]);
+  });
+
   test("POST에 문자열이 아닌 값이 있으면 400", async () => {
     const res = await history.POST(request("POST", { ...entry, output: 3 }));
     expect(res.status).toBe(400);

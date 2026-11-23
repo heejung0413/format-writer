@@ -51,6 +51,33 @@ describe("buildSystemPrompt", () => {
   });
 });
 
+describe("buildSystemPrompt 길이", () => {
+  const base = { format, recipient: "없음", tone: "보통" };
+
+  test("짧게이면 핵심만 짧게 쓰라는 줄이 들어간다", () => {
+    expect(buildSystemPrompt({ ...base, length: "짧게" })).toContain(
+      "길이: 짧게 (핵심만 남겨 가능한 한 짧게 쓴다)",
+    );
+  });
+
+  test("자세히이면 배경과 이유까지 풀어 쓰라는 줄이 들어간다", () => {
+    expect(buildSystemPrompt({ ...base, length: "자세히" })).toContain(
+      "길이: 자세히 (배경과 이유까지 풀어서 자세히 쓴다)",
+    );
+  });
+
+  test("보통이거나 길이를 안 주면 길이 줄이 없다", () => {
+    expect(buildSystemPrompt({ ...base, length: "보통" })).not.toContain("길이:");
+    expect(buildSystemPrompt(base)).not.toContain("길이:");
+  });
+
+  test("길이 줄은 말투 줄 바로 뒤에 온다", () => {
+    const lines = buildSystemPrompt({ ...base, length: "짧게" }).split("\n");
+    const at = lines.findIndex((l) => l.startsWith("말투:"));
+    expect(lines[at + 1]).toMatch(/^길이: 짧게/);
+  });
+});
+
 describe("buildSystemPrompt 알 수 없는 말투", () => {
   test("지침 표에 없는 말투는 이름 그대로 넣는다", () => {
     const prompt = buildSystemPrompt({ format, recipient: "없음", tone: "엉뚱한말투" });

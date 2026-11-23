@@ -19,5 +19,6 @@ export async function POST(req: Request) {
     );
   }
   const input = Object.fromEntries(FIELDS.map((key) => [key, body[key]])) as HistoryInput;
+  if (typeof body.length === "string") input.length = body.length;
   return Response.json(await addHistory(input), { status: 201 });
 }
