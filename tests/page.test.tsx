@@ -1096,6 +1096,7 @@ describe("Home 결과 편집과 저장 대기의 정리", () => {
     ]);
     await advance(5000);
     expect(patchesTo("h-new-1")).toHaveLength(2);
+    expect(screen.queryByText("저장됨")).not.toBeInTheDocument();
   });
 
   test("고친 글로 다듬기를 직접 입력해 보내도 같다", async () => {

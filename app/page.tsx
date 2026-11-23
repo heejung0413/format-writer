@@ -122,8 +122,8 @@ export default function Home() {
     pendingSaveRef.current = null;
   }
 
-  /** 기다리던 저장을 그 자리에서 보낸다. 결과는 저장하려던 기록(id)에 대해서만 반영한다. */
-  function flushPendingSave() {
+  /** 기다리던 저장을 그 자리에서 보낸다. 결과는 저장하려던 기록(id)에 대해서만 반영하고, 저장됨 표시는 report일 때만 한다. */
+  function flushPendingSave(report = false) {
     const pending = pendingSaveRef.current;
     if (!pending) return;
     cancelPendingSave();
@@ -135,7 +135,7 @@ export default function Home() {
         if (!mountedRef.current) return;
         if (updated) applySaved(updated);
         else if (before) applySaved(before);
-        setSaveStatus({ id: pending.id, ok: updated !== null });
+        if (report) setSaveStatus({ id: pending.id, ok: updated !== null });
       });
   }
 
@@ -149,7 +149,7 @@ export default function Home() {
     cancelPendingSave();
     if (!historyId || text.trim() === "") return;
     const id = historyId;
-    const timer = setTimeout(flushPendingSave, SAVE_DELAY_MS);
+    const timer = setTimeout(() => flushPendingSave(true), SAVE_DELAY_MS);
     pendingSaveRef.current = { id, text, timer };
   }
 
