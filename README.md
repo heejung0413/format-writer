@@ -6,7 +6,7 @@
 
 ```bash
 npm install
-npm run dev                  # http://localhost:3000
+npm run dev                  # http://localhost:4100
 ```
 
 기본값은 이 컴퓨터에 로그인된 Claude Code 계정으로 Claude를 호출합니다. 터미널에서 `claude` 명령이 실행되고 로그인돼 있으면 따로 설정할 것이 없습니다. 사용량은 그 계정의 Claude Code 한도에서 나갑니다.
