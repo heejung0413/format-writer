@@ -1008,7 +1008,7 @@ describe("Home 결과 편집과 저장 대기의 정리", () => {
     await user.type(resultBox(), " 수정");
     await user.click(screen.getByRole("button", { name: /다른 메모/ }));
 
-    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+    expect(patchesTo("h-new-1")).toHaveLength(1);
     expect(patchesTo("h-new-1")[0].body).toEqual({ output: "초안 글 수정" });
     expect(resultBox()).toHaveValue("다른 글");
     expect(screen.getByPlaceholderText(inputPlaceholder)).toHaveValue("다른 메모");
@@ -1056,6 +1056,7 @@ describe("Home 결과 편집과 저장 대기의 정리", () => {
     await user.type(screen.getByPlaceholderText(inputPlaceholder), "다른 메모");
     await user.click(screen.getByRole("button", { name: "작성하기" }));
 
+    expect(patchesTo("h-new-1")).toHaveLength(1);
     await waitFor(() => expect(resultBox()).toHaveValue("두번째 글"));
     await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(2));
     expect(patchesTo("h-new-1")).toHaveLength(1);
@@ -1079,6 +1080,7 @@ describe("Home 결과 편집과 저장 대기의 정리", () => {
     backend.generate = () => streamResponse([text("짧게 줄인 글"), done]);
     await user.click(screen.getByRole("button", { name: "더 짧게" }));
 
+    expect(patchesTo("h-new-1").map((c) => c.body)).toEqual([{ output: "초안 글 수정" }]);
     await waitFor(() => expect(resultBox()).toHaveValue("짧게 줄인 글"));
     const refineCall = callsTo("/api/generate", "POST")[1];
     expect((refineCall.body as { messages: ChatMessage[] }).messages).toEqual([
