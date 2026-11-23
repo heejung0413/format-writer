@@ -5,16 +5,16 @@ test.describe("다듬기", () => {
     const notes = "프로젝트 일정이 이틀 늦어질 것 같습니다";
     await app.open();
     await app.generate(notes);
-    await expect(app.result()).toHaveText(`[메일/없음/보통] ${notes}`);
+    await expect(app.result()).toHaveValue(`[메일/없음/보통]\n${notes}`);
     await app.untilIdle();
 
     await app.page.getByRole("button", { name: "더 짧게" }).click();
-    await expect(app.result()).toHaveText(`[메일/없음/보통] 수정 1회 (더 짧게) ${notes}`);
+    await expect(app.result()).toHaveValue(`[메일/없음/보통] 수정 1회 (더 짧게)\n${notes}`);
     await app.untilIdle();
 
     await app.refineInput().fill("마지막 문단 빼 줘");
     await app.refineInput().press("Enter");
-    await expect(app.result()).toHaveText(`[메일/없음/보통] 수정 2회 (마지막 문단 빼 줘) ${notes}`);
+    await expect(app.result()).toHaveValue(`[메일/없음/보통] 수정 2회 (마지막 문단 빼 줘)\n${notes}`);
     await app.untilIdle();
 
     await expect(app.sidebar().getByRole("listitem")).toHaveCount(1);
@@ -35,7 +35,7 @@ test.describe("새로고침 후 유지", () => {
     const notes = "신제품 출시 일정 공유";
     await app.open();
     await app.generate(notes, { format: "채팅", recipient: "동료", tone: "편하게" });
-    await expect(app.result()).toHaveText(`[채팅/동료/편하게] ${notes}`);
+    await expect(app.result()).toHaveValue(`[채팅/동료/편하게]\n${notes}`);
     await app.untilIdle();
     await expect(app.historyEntry(notes)).toBeVisible();
 
@@ -55,10 +55,10 @@ test.describe("새로고침 후 유지", () => {
     await expect(app.formatSelect()).toHaveValue("chat");
     await expect(app.recipientSelect()).toHaveValue("동료");
     await expect(app.toneSelect()).toHaveValue("편하게");
-    await expect(app.result()).toHaveText(`[채팅/동료/편하게] ${notes}`);
+    await expect(app.result()).toHaveValue(`[채팅/동료/편하게]\n${notes}`);
 
     await page.getByRole("button", { name: "더 공손하게" }).click();
-    await expect(app.result()).toHaveText(`[채팅/동료/편하게] 수정 1회 (더 공손하게) ${notes}`);
+    await expect(app.result()).toHaveValue(`[채팅/동료/편하게] 수정 1회 (더 공손하게)\n${notes}`);
     await app.untilIdle();
 
     await expect(app.sidebar().getByRole("listitem")).toHaveCount(1);
@@ -73,7 +73,7 @@ test.describe("기록 삭제", () => {
     const notes = "지울 기록";
     await app.open();
     await app.generate(notes);
-    await expect(app.result()).toHaveText(`[메일/없음/보통] ${notes}`);
+    await expect(app.result()).toHaveValue(`[메일/없음/보통]\n${notes}`);
     await app.untilIdle();
     await expect(app.historyEntry(notes)).toBeVisible();
 

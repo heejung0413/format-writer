@@ -19,6 +19,7 @@ export type SavedHistory = {
   formatName: string;
   recipient: string;
   tone: string;
+  length?: string;
   input: string;
   output: string;
 };
@@ -54,8 +55,10 @@ export class App {
   readonly retryButton = () => this.page.getByRole("button", { name: "다시 시도" });
   readonly refineInput = () => this.page.getByPlaceholder(/수정 지시를 입력하세요/);
   readonly sidebar = () => this.page.getByRole("complementary");
-  /** 결과 글. 역할이 없는 <pre>라서 태그로 찾는다. */
-  readonly result = () => this.page.locator("pre");
+  /** 결과 글. 작성이 끝나면 고칠 수 있는 입력 칸(이름 "결과")이다. */
+  readonly result = () => this.page.getByRole("textbox", { name: "결과", exact: true });
+  readonly lengthSelect = () => this.page.getByRole("combobox", { name: /^길이/ });
+  readonly saveStatus = () => this.page.getByRole("status").filter({ hasText: /저장/ });
   readonly emptyHistory = () => this.page.getByText("아직 기록이 없습니다.");
   readonly historyEntry = (text: string | RegExp) =>
     this.sidebar().getByRole("button", { name: text }).first();
@@ -85,7 +88,7 @@ export class App {
   }
 
   async resultText(): Promise<string> {
-    return (await this.result().textContent()) ?? "";
+    return this.result().inputValue();
   }
 
   history(): SavedHistory[] {
@@ -94,6 +97,14 @@ export class App {
 
   formats(): SavedFormat[] {
     return readJson<SavedFormat[]>("formats.json");
+  }
+
+  settings(): { signature: string } {
+    return readJson<{ signature: string }>("settings.json");
+  }
+
+  settingsExists(): boolean {
+    return existsSync(path.join(dataDir, "settings.json"));
   }
 
   private logEntries(): LogEntry[] {

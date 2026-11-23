@@ -26,7 +26,7 @@ test.describe("글 작성", () => {
     await expect(app.stopButton()).toBeVisible();
     await expect(app.generateButton()).toHaveCount(0);
 
-    const final = `[메일/상사/격식] ${notes}`;
+    const final = `[메일/상사/격식]\n${notes}`;
     await expect
       .poll(async () => (await app.resultText()).length, { message: "글이 일부만 보이는 순간이 있어야 한다" })
       .toBeGreaterThan(0);
@@ -38,7 +38,7 @@ test.describe("글 작성", () => {
       })
       .toBe(true);
 
-    await expect(app.result()).toHaveText(final);
+    await expect(app.result()).toHaveValue(final);
     await app.untilIdle();
     await expect(app.stopButton()).toHaveCount(0);
 
@@ -62,7 +62,7 @@ test.describe("글 작성", () => {
   test("받는 사람을 없음으로 두면 시스템 지시문에 받는 사람 줄이 들어가지 않는다", async ({ app }) => {
     await app.open();
     await app.generate("점심 뭐 먹을지 정해 줘", { format: "채팅" });
-    await expect(app.result()).toHaveText("[채팅/없음/보통] 점심 뭐 먹을지 정해 줘");
+    await expect(app.result()).toHaveValue("[채팅/없음/보통]\n점심 뭐 먹을지 정해 줘");
     await app.untilIdle();
 
     expect(app.invocations()[0].system).not.toContain("받는 사람:");
@@ -74,7 +74,7 @@ test.describe("복사", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL });
     await app.open();
     await app.generate("분기 매출 요약 부탁드려요");
-    await expect(app.result()).toHaveText("[메일/없음/보통] 분기 매출 요약 부탁드려요");
+    await expect(app.result()).toHaveValue("[메일/없음/보통]\n분기 매출 요약 부탁드려요");
     await app.untilIdle();
 
     const shown = await app.resultText();
@@ -89,12 +89,12 @@ test.describe("중단", () => {
     await app.open();
     await app.generate("[[SLOW]] 아주 긴 글");
 
-    await expect(app.result()).toContainText("천천히 쓰는 중입니다.");
+    await expect(app.result()).toHaveValue(/천천히 쓰는 중입니다\./);
     await app.stopButton().click();
 
     await expect(app.generateButton()).toBeEnabled();
     await expect(app.stopButton()).toHaveCount(0);
-    await expect(app.result()).toContainText("천천히 쓰는 중입니다.");
+    await expect(app.result()).toHaveValue(/천천히 쓰는 중입니다\./);
     await expect(app.emptyHistory()).toBeVisible();
     expect(app.history()).toEqual([]);
 
@@ -142,7 +142,7 @@ test.describe("오류 표시", () => {
     await expect(app.page.getByText("Claude Code 요청에 실패했습니다: 일시적인 오류 (e2e)")).toBeVisible();
     await app.retryButton().click();
 
-    await expect(app.result()).toHaveText("[메일/없음/보통] [[FLAKY]] 재시도 메모");
+    await expect(app.result()).toHaveValue("[메일/없음/보통]\n[[FLAKY]] 재시도 메모");
     await expect(app.page.getByText("Claude Code 요청에 실패했습니다")).toHaveCount(0);
     await app.untilIdle();
     await expect(app.historyEntry("[[FLAKY]] 재시도 메모")).toBeVisible();

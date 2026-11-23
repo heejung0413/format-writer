@@ -6,6 +6,7 @@
 //   [[EXIT]]          stderr에만 메시지를 쓰고 종료 코드 2로 끝낸다
 //   [[REFUSE]]        stop_reason이 refusal인 결과를 낸다
 //   [[FLAKY]]         처음 한 번은 실패하고 두 번째부터 성공한다 (횟수는 E2E_FAKE_STATE_DIR 아래 파일에 저장)
+// 지시문에 길이 줄이 있으면 글 끝에 "[길이: 짧게]" 줄을, <서명> 블록이 있으면 "--서명--"과 서명 내용을 덧붙여 브라우저에서도 보이게 한다.
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -106,10 +107,13 @@ async function main(stdin) {
   const instructions = [...stdin.matchAll(/<수정 지시>\n([\s\S]*?)\n<\/수정 지시>/g)].map((m) => m[1]);
   const original = (stdin.match(/<원문>\n([\s\S]*?)\n<\/원문>/)?.[1] ?? stdin).trim();
   const head = `[${format}/${recipient}/${tone}]`;
-  const text =
+  const length = field(system, "길이");
+  const signature = system.match(/<서명>\n([\s\S]*?)\n<\/서명>/)?.[1];
+  const body =
     instructions.length > 0
       ? `${head} 수정 ${instructions.length}회 (${instructions[instructions.length - 1]})\n${original}`
       : `${head}\n${original}`;
+  const text = body + (length ? `\n[길이: ${length.split(" ")[0]}]` : "") + (signature ? `\n--서명--\n${signature}` : "");
   await stream(text, 120);
   result({ result: text });
 }

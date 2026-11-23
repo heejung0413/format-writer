@@ -27,7 +27,7 @@ test.describe("포맷 관리", () => {
 
     // 새 포맷으로 글 쓰기
     await app.generate("이번 주 결제 개편을 끝냈습니다", { format: name, recipient: "상사", tone: "보통" });
-    await expect(app.result()).toHaveText(`[${name}/상사/보통] 이번 주 결제 개편을 끝냈습니다`);
+    await expect(app.result()).toHaveValue(`[${name}/상사/보통]\n이번 주 결제 개편을 끝냈습니다`);
     await app.untilIdle();
     const [call] = app.invocations();
     expect(call.system).toContain(`포맷: ${name}`);

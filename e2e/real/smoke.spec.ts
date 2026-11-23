@@ -14,6 +14,6 @@ test("진짜 claude로 짧은 메일을 쓰고 기록에 저장한다", async ({
 
   await expect(page.getByRole("button", { name: "작성하기" })).toBeVisible({ timeout: 150_000 });
   await expect(page.getByText("Claude Code 요청에 실패했습니다")).toHaveCount(0);
-  await expect(page.locator("pre")).not.toBeEmpty();
+  await expect(page.getByRole("textbox", { name: "결과", exact: true })).not.toHaveValue("");
   await expect(page.getByRole("complementary").getByRole("button", { name: notes })).toBeVisible();
 });
