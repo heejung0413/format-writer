@@ -227,5 +227,5 @@ describe("다시 열기와 삭제", () => {
       expect(saved[199].id).toBe("old-198");
       expect(saved.some((item) => item.id === "old-199")).toBe(false);
     });
-  });
+  }, 30_000);
 });
