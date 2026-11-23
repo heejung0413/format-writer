@@ -7,15 +7,32 @@ type Props = {
   busy: boolean;
   error: string | null;
   canRefine: boolean;
+  /** 글을 모두 지워 output이 빈 문자열이어도 결과 입력 칸을 남길지. 기본은 output이 있을 때만 보인다. */
+  hasResult?: boolean;
+  saveStatus?: "saved" | "failed" | null;
   onRetry: () => void;
   onRefine: (instruction: string) => void;
+  onEdit: (text: string) => void;
 };
 
 const QUICK = ["더 짧게", "더 공손하게"];
 
-export function ResultPanel({ output, busy, error, canRefine, onRetry, onRefine }: Props) {
+const SAVE_STATUS_TEXT = { saved: "저장됨", failed: "저장하지 못했습니다." } as const;
+
+export function ResultPanel({
+  output,
+  busy,
+  error,
+  canRefine,
+  hasResult = output !== "",
+  saveStatus = null,
+  onRetry,
+  onRefine,
+  onEdit,
+}: Props) {
   const [instruction, setInstruction] = useState("");
   const [copied, setCopied] = useState(false);
+  const canCopy = output !== "" && !busy;
 
   async function copy() {
     await navigator.clipboard.writeText(output);
@@ -41,14 +58,20 @@ export function ResultPanel({ output, busy, error, canRefine, onRetry, onRefine 
         </div>
       )}
       <div className="relative min-h-40 rounded-md border border-slate-300 bg-white p-3">
-        {output ? (
-          <pre className="whitespace-pre-wrap pr-14 font-sans text-sm">{output}</pre>
+        {hasResult ? (
+          <textarea
+            aria-label="결과"
+            className="field-sizing-content block min-h-32 w-full resize-none bg-transparent pr-28 font-sans text-sm outline-none"
+            value={output}
+            readOnly={busy}
+            onChange={(e) => onEdit(e.target.value)}
+          />
         ) : (
           <p className="text-sm text-slate-400">
             {busy ? "작성 중..." : "작성한 글이 여기에 나옵니다."}
           </p>
         )}
-        {output && !busy && (
+        {canCopy && (
           <button
             type="button"
             className="absolute right-2 top-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-100"
@@ -58,6 +81,11 @@ export function ResultPanel({ output, busy, error, canRefine, onRetry, onRefine 
           </button>
         )}
       </div>
+      {hasResult && (
+        <p role="status" className={`h-4 text-xs ${saveStatus === "failed" ? "text-red-700" : "text-slate-500"}`}>
+          {saveStatus ? SAVE_STATUS_TEXT[saveStatus] : ""}
+        </p>
+      )}
       {canRefine && (
         <div className="flex flex-wrap items-center gap-2">
           {QUICK.map((label) => (

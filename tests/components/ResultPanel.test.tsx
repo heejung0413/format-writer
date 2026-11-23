@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ResultPanel } from "@/components/ResultPanel";
 
 function setup(overrides: Partial<Parameters<typeof ResultPanel>[0]> = {}) {
-  const handlers = { onRetry: vi.fn(), onRefine: vi.fn() };
+  const handlers = { onRetry: vi.fn(), onRefine: vi.fn(), onEdit: vi.fn() };
   render(
     <ResultPanel
       output=""
@@ -24,7 +25,10 @@ const refinePlaceholder = /수정 지시를 입력하세요/;
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
+
+const resultBox = () => screen.getByRole("textbox", { name: "결과" });
 
 describe("ResultPanel 표시", () => {
   test("출력이 없고 busy가 아니면 빈 상태 안내를 보여 준다", () => {
@@ -39,12 +43,16 @@ describe("ResultPanel 표시", () => {
     expect(screen.queryByText("작성한 글이 여기에 나옵니다.")).not.toBeInTheDocument();
   });
 
-  test("출력이 있으면 줄바꿈을 그대로 보여 준다", () => {
+  test("출력이 있으면 줄바꿈을 그대로 담은 결과 입력 칸을 보여 준다", () => {
     setup({ output: "제목: 안내\n\n본문" });
-    const pre = screen.getByText(/제목: 안내/);
-    expect(pre.tagName).toBe("PRE");
-    expect(pre.textContent).toBe("제목: 안내\n\n본문");
+    expect(resultBox().tagName).toBe("TEXTAREA");
+    expect(resultBox()).toHaveValue("제목: 안내\n\n본문");
     expect(screen.queryByText("작성한 글이 여기에 나옵니다.")).not.toBeInTheDocument();
+  });
+
+  test("출력이 없으면 결과 입력 칸 없이 안내 문구만 보인다", () => {
+    setup();
+    expect(screen.queryByRole("textbox", { name: "결과" })).not.toBeInTheDocument();
   });
 
   test("에러가 없으면 배너와 다시 시도가 없다", () => {
@@ -177,5 +185,66 @@ describe("ResultPanel 다듬기", () => {
     fireEvent.change(input, { target: { value: "지시" } });
     fireEvent.keyDown(input, { key: "a" });
     expect(h.onRefine).not.toHaveBeenCalled();
+  });
+});
+
+function Controlled(props: { initial: string; onEdit: (text: string) => void; busy?: boolean }) {
+  const [output, setOutput] = useState(props.initial);
+  return (
+    <ResultPanel
+      output={output}
+      busy={props.busy ?? false}
+      error={null}
+      canRefine={false}
+      onRetry={() => {}}
+      onRefine={() => {}}
+      onEdit={(text) => {
+        setOutput(text);
+        props.onEdit(text);
+      }}
+    />
+  );
+}
+
+describe("ResultPanel 편집", () => {
+  test("작성이 끝나면 고칠 수 있고 입력할 때마다 onEdit에 전체 글을 넘긴다", async () => {
+    const onEdit = vi.fn();
+    render(<Controlled initial="초안" onEdit={onEdit} />);
+    expect(resultBox()).not.toHaveAttribute("readonly");
+    await userEvent.type(resultBox(), "!{Enter}둘째 줄");
+    expect(onEdit).toHaveBeenNthCalledWith(1, "초안!");
+    expect(onEdit).toHaveBeenLastCalledWith("초안!\n둘째 줄");
+    expect(resultBox()).toHaveValue("초안!\n둘째 줄");
+  });
+
+  test("작성 중에는 읽기 전용이라 입력해도 onEdit을 부르지 않는다", async () => {
+    const h = setup({ output: "쓰는 중", busy: true });
+    expect(resultBox()).toHaveAttribute("readonly");
+    await userEvent.type(resultBox(), "추가");
+    expect(h.onEdit).not.toHaveBeenCalled();
+    expect(resultBox()).toHaveValue("쓰는 중");
+  });
+
+  test("hasResult가 true이면 글을 모두 지워 빈 칸이 되어도 입력 칸이 남아 다시 쓸 수 있다", async () => {
+    const h = setup({ output: "", hasResult: true });
+    expect(resultBox()).toHaveValue("");
+    await userEvent.type(resultBox(), "새");
+    expect(h.onEdit).toHaveBeenCalledWith("새");
+    expect(screen.queryByRole("button", { name: "복사" })).not.toBeInTheDocument();
+  });
+
+  test("저장 상태가 saved이면 저장됨, failed이면 저장하지 못했습니다를 결과 칸 아래에 보인다", () => {
+    const view = render(
+      <ResultPanel output="본문" busy={false} error={null} canRefine={false} saveStatus="saved" onRetry={() => {}} onRefine={() => {}} onEdit={() => {}} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("저장됨");
+    view.rerender(
+      <ResultPanel output="본문" busy={false} error={null} canRefine={false} saveStatus="failed" onRetry={() => {}} onRefine={() => {}} onEdit={() => {}} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("저장하지 못했습니다.");
+    view.rerender(
+      <ResultPanel output="본문" busy={false} error={null} canRefine={false} saveStatus={null} onRetry={() => {}} onRefine={() => {}} onEdit={() => {}} />,
+    );
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 });

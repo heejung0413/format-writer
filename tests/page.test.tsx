@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import Home from "@/app/page";
+import { advance, fakeSaveTimers } from "./fake-timers";
 import type { ChatMessage, Format, HistoryItem, StreamLine } from "@/lib/types";
 
 const FORMATS: Format[] = [
@@ -51,12 +52,20 @@ function json(body: unknown, status = 200): Response {
 const text = (t: string): StreamLine => ({ type: "text", text: t });
 const done: StreamLine = { type: "done" };
 
-type Call = { url: string; method: string; body: unknown; signal: AbortSignal | null | undefined };
+type Call = {
+  url: string;
+  method: string;
+  body: unknown;
+  signal: AbortSignal | null | undefined;
+  keepalive: boolean;
+};
 
 type Backend = {
   formats: Format[];
   history: HistoryItem[];
   generate: (call: Call) => Response | Promise<Response>;
+  patch?: (call: Call) => Response | Promise<Response>;
+  historyPostResponse?: () => Response;
   formatsResponse?: () => Response;
   signature: string;
 };
@@ -93,6 +102,7 @@ beforeEach(() => {
         method,
         body: typeof raw === "string" ? JSON.parse(raw) : undefined,
         signal: init?.signal,
+        keepalive: init?.keepalive === true,
       };
       calls.push(call);
 
@@ -107,18 +117,23 @@ beforeEach(() => {
         return json({ signature: backend.signature });
       }
       if (url === "/api/history" && method === "POST") {
+        if (backend.historyPostResponse) return backend.historyPostResponse();
         const created: HistoryItem = {
           ...(call.body as Omit<HistoryItem, "id" | "createdAt">),
           id: `h-new-${nextId++}`,
           createdAt: new Date(2026, 10, 5, 9, 7).toISOString(),
         };
+        backend.history.unshift(created);
         return json(created, 201);
       }
       const historyMatch = url.match(/^\/api\/history\/(.+)$/);
       if (historyMatch && method === "PATCH") {
+        if (backend.patch) return backend.patch(call);
         const output = (call.body as { output: string }).output;
         const base = backend.history.find((h) => h.id === historyMatch[1]) ?? historyItem();
-        return json({ ...base, id: historyMatch[1], output });
+        const updated = { ...base, id: historyMatch[1], output };
+        backend.history = backend.history.map((h) => (h.id === updated.id ? updated : h));
+        return json(updated);
       }
       if (historyMatch && method === "DELETE") return new Response(null, { status: 204 });
       const formatMatch = url.match(/^\/api\/formats\/(.+)$/);
@@ -132,14 +147,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
+
+let unmountHome: () => void = () => {};
+const screenUnmount = () => unmountHome();
 
 const inputPlaceholder = /전하고 싶은 내용을/;
 const refinePlaceholder = /수정 지시를 입력하세요/;
 
 async function renderLoaded() {
-  render(<Home />);
+  const view = render(<Home />);
+  unmountHome = view.unmount;
   await screen.findByRole("option", { name: "메일" });
   return userEvent.setup();
 }
@@ -814,5 +835,358 @@ describe("Home 포맷 관리", () => {
     await user.click(within(row).getByRole("button", { name: "삭제" }));
     await waitFor(() => expect(screen.queryByRole("option", { name: "채팅" })).not.toBeInTheDocument());
     expect(screen.getByLabelText("포맷")).toHaveValue("report");
+  });
+});
+
+const resultBox = () => screen.getByRole("textbox", { name: "결과" });
+const patchesTo = (id: string) => callsTo(`/api/history/${id}`, "PATCH");
+
+/** 작성을 한 번 끝내 기록(h-new-1)을 만든 뒤, 결과 편집의 1초 대기를 가짜 타이머로 제어할 수 있게 준비한다. */
+async function generatedForEditing(options: { historyItems?: HistoryItem[] } = {}) {
+  backend.history = options.historyItems ?? [];
+  backend.generate = () => streamResponse([text("초안 글"), done]);
+  await renderLoaded();
+  const user = userEvent.setup({ delay: null });
+  await user.type(screen.getByPlaceholderText(inputPlaceholder), "원래 메모");
+  await user.click(screen.getByRole("button", { name: "작성하기" }));
+  await waitFor(() => expect(resultBox()).toHaveValue("초안 글"));
+  await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(1));
+  await screen.findByRole("button", { name: "더 짧게" });
+  fakeSaveTimers();
+  return user;
+}
+
+describe("Home 결과 편집", () => {
+  test("고치면 화면에 바로 반영되고, 마지막 입력 1초 뒤에 한 번만 PATCH한 뒤 저장됨을 보인다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    expect(resultBox()).toHaveValue("초안 글 수정");
+
+    await advance(999);
+    expect(patchesTo("h-new-1")).toHaveLength(0);
+    await user.type(resultBox(), "!");
+    await advance(999);
+    expect(patchesTo("h-new-1")).toHaveLength(0);
+    expect(screen.queryByText("저장됨")).not.toBeInTheDocument();
+
+    await advance(1);
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+    expect(patchesTo("h-new-1")[0].body).toEqual({ output: "초안 글 수정!" });
+    expect(await screen.findByText("저장됨")).toBeInTheDocument();
+
+    await user.type(resultBox(), "?");
+    expect(screen.queryByText("저장됨")).not.toBeInTheDocument();
+    await advance(5000);
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(2));
+    expect(patchesTo("h-new-1")[1].body).toEqual({ output: "초안 글 수정!?" });
+  });
+
+  test("저장에 실패하면 저장하지 못했습니다를 보이고, 다시 고쳐서 성공하면 저장됨으로 바뀐다", async () => {
+    const user = await generatedForEditing();
+    backend.patch = () => new Response(null, { status: 500 });
+    await user.type(resultBox(), " 수정");
+    await advance(1000);
+    expect(await screen.findByText("저장하지 못했습니다.")).toBeInTheDocument();
+    expect(resultBox()).toHaveValue("초안 글 수정");
+
+    backend.patch = undefined;
+    await user.type(resultBox(), "!");
+    expect(screen.queryByText("저장하지 못했습니다.")).not.toBeInTheDocument();
+    await advance(1000);
+    expect(await screen.findByText("저장됨")).toBeInTheDocument();
+  });
+
+  test("네트워크 오류로 저장이 던져도 저장하지 못했습니다만 보이고 오류 배너는 없다", async () => {
+    const user = await generatedForEditing();
+    backend.patch = () => {
+      throw new TypeError("network down");
+    };
+    await user.type(resultBox(), " 수정");
+    await advance(1000);
+    expect(await screen.findByText("저장하지 못했습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+  });
+
+  test("공백뿐인 글은 저장하지 않고, 그 전에 기다리던 저장도 취소한다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    await user.clear(resultBox());
+    expect(resultBox()).toHaveValue("");
+    await user.type(resultBox(), "   ");
+    await advance(5000);
+    expect(patchesTo("h-new-1")).toHaveLength(0);
+    expect(resultBox()).toHaveValue("   ");
+    expect(screen.queryByText("저장됨")).not.toBeInTheDocument();
+  });
+
+  test("글을 모두 지워도 결과 입력 칸은 남아 다시 쓸 수 있고 쓰면 저장한다", async () => {
+    const user = await generatedForEditing();
+    await user.clear(resultBox());
+    await advance(5000);
+    expect(patchesTo("h-new-1")).toHaveLength(0);
+    await user.type(resultBox(), "새 글");
+    await advance(1000);
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+    expect(patchesTo("h-new-1")[0].body).toEqual({ output: "새 글" });
+  });
+
+  test("기록 저장에 실패해 기록 id가 없으면 고칠 수는 있지만 저장하지 않는다", async () => {
+    backend.history = [];
+    backend.generate = () => streamResponse([text("초안 글"), done]);
+    backend.historyPostResponse = () => new Response(null, { status: 500 });
+    await renderLoaded();
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByPlaceholderText(inputPlaceholder), "원래 메모");
+    await user.click(screen.getByRole("button", { name: "작성하기" }));
+    await waitFor(() => expect(resultBox()).toHaveValue("초안 글"));
+    await screen.findByRole("button", { name: "더 짧게" });
+    fakeSaveTimers();
+
+    await user.type(resultBox(), " 수정");
+    expect(resultBox()).toHaveValue("초안 글 수정");
+    await advance(5000);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+    expect(screen.queryByText("저장됨")).not.toBeInTheDocument();
+  });
+
+  test("작성 중에는 결과 칸이 읽기 전용이다", async () => {
+    let release: () => void = () => {};
+    backend.generate = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(encoder.encode(JSON.stringify(text("쓰는 중")) + "\n"));
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            controller.enqueue(encoder.encode(JSON.stringify(done) + "\n"));
+            controller.close();
+          },
+        }),
+      );
+    const user = await renderLoaded();
+    await writeAndSubmit(user);
+    await waitFor(() => expect(resultBox()).toHaveValue("쓰는 중"));
+    expect(resultBox()).toHaveAttribute("readonly");
+    await user.type(resultBox(), "끼어들기");
+    expect(resultBox()).toHaveValue("쓰는 중");
+    release();
+    await waitFor(() => expect(resultBox()).not.toHaveAttribute("readonly"));
+  });
+
+  test("고친 글로 복사한다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const user = await generatedForEditing();
+    vi.stubGlobal("navigator", { clipboard: { writeText }, platform: "" });
+    await user.type(resultBox(), " 수정");
+    await user.click(screen.getByRole("button", { name: "복사" }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("초안 글 수정");
+  });
+
+  test("기록을 복원한 글도 고쳐서 그 기록에 저장한다", async () => {
+    backend.history = [historyItem()];
+    await renderLoaded();
+    const user = userEvent.setup({ delay: null });
+    await user.click(await screen.findByRole("button", { name: /예전에 쓴 메모/ }));
+    fakeSaveTimers();
+    await user.type(resultBox(), "!");
+    await advance(1000);
+    await waitFor(() => expect(patchesTo("h-old")).toHaveLength(1));
+    expect(patchesTo("h-old")[0].body).toEqual({ output: "예전에 만든 글!" });
+  });
+});
+
+describe("Home 결과 편집과 저장 대기의 정리", () => {
+  const OTHER = () =>
+    historyItem({ id: "h-other", input: "다른 메모", formatId: "mail", formatName: "메일", output: "다른 글" });
+
+  test("고친 뒤 1초 안에 다른 기록을 열면 그 자리에서 원래 기록에 저장하고 다른 기록은 건드리지 않는다", async () => {
+    const user = await generatedForEditing({ historyItems: [OTHER()] });
+    await user.type(resultBox(), " 수정");
+    await user.click(screen.getByRole("button", { name: /다른 메모/ }));
+
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+    expect(patchesTo("h-new-1")[0].body).toEqual({ output: "초안 글 수정" });
+    expect(resultBox()).toHaveValue("다른 글");
+    expect(screen.getByPlaceholderText(inputPlaceholder)).toHaveValue("다른 메모");
+
+    await advance(5000);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+    expect(patchesTo("h-other")).toHaveLength(0);
+    expect(screen.queryByText("저장됨")).not.toBeInTheDocument();
+  });
+
+  test("저장이 끝난 뒤 목록의 그 기록은 저장된 글이고, 다시 열면 고친 글이 보인다", async () => {
+    const user = await generatedForEditing({ historyItems: [OTHER()] });
+    await user.type(resultBox(), " 수정");
+    await user.click(screen.getByRole("button", { name: /다른 메모/ }));
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+    await waitFor(() => expect(backend.history.find((h) => h.id === "h-new-1")?.output).toBe("초안 글 수정"));
+
+    await user.click(screen.getByRole("button", { name: /원래 메모/ }));
+    await waitFor(() => expect(resultBox()).toHaveValue("초안 글 수정"));
+    expect(screen.getByPlaceholderText(inputPlaceholder)).toHaveValue("원래 메모");
+  });
+
+  test("넘어가며 보낸 저장이 실패하면 목록의 그 기록은 저장돼 있던 글로 되돌아간다", async () => {
+    const user = await generatedForEditing({ historyItems: [OTHER()] });
+    let fail: () => void = () => {};
+    backend.patch = () =>
+      new Promise<Response>((resolve) => {
+        fail = () => resolve(new Response(null, { status: 500 }));
+      });
+    await user.type(resultBox(), " 수정");
+    await user.click(screen.getByRole("button", { name: /다른 메모/ }));
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+    await act(async () => {
+      fail();
+    });
+    await user.click(screen.getByRole("button", { name: /원래 메모/ }));
+    await waitFor(() => expect(resultBox()).toHaveValue("초안 글"));
+  });
+
+  test("고친 뒤 1초 안에 새로 작성하면 이전 기록에 먼저 저장하고 새 글은 새 기록이 된다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    backend.generate = () => streamResponse([text("두번째 글"), done]);
+    await user.clear(screen.getByPlaceholderText(inputPlaceholder));
+    await user.type(screen.getByPlaceholderText(inputPlaceholder), "다른 메모");
+    await user.click(screen.getByRole("button", { name: "작성하기" }));
+
+    await waitFor(() => expect(resultBox()).toHaveValue("두번째 글"));
+    await waitFor(() => expect(callsTo("/api/history", "POST")).toHaveLength(2));
+    expect(patchesTo("h-new-1")).toHaveLength(1);
+    expect(patchesTo("h-new-1")[0].body).toEqual({ output: "초안 글 수정" });
+    expect(patchesTo("h-new-2")).toHaveLength(0);
+    expect(bodyOf<{ output: string }>(callsTo("/api/history", "POST")[1]).output).toBe("두번째 글");
+    await advance(5000);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+  });
+
+  test("고친 뒤 1초 안에 다듬기를 시작하면 고친 글로 요청하고, 고친 글 저장이 끝난 뒤에 다듬은 결과를 저장한다", async () => {
+    const user = await generatedForEditing();
+    let releaseEdited: () => void = () => {};
+    backend.patch = (call) =>
+      (call.body as { output: string }).output === "초안 글 수정"
+        ? new Promise<Response>((resolve) => {
+            releaseEdited = () => resolve(json({ ...historyItem(), id: "h-new-1", output: "초안 글 수정" }));
+          })
+        : json({ ...historyItem(), id: "h-new-1", output: (call.body as { output: string }).output });
+    await user.type(resultBox(), " 수정");
+    backend.generate = () => streamResponse([text("짧게 줄인 글"), done]);
+    await user.click(screen.getByRole("button", { name: "더 짧게" }));
+
+    await waitFor(() => expect(resultBox()).toHaveValue("짧게 줄인 글"));
+    const refineCall = callsTo("/api/generate", "POST")[1];
+    expect((refineCall.body as { messages: ChatMessage[] }).messages).toEqual([
+      { role: "user", content: "원래 메모" },
+      { role: "assistant", content: "초안 글 수정" },
+      { role: "user", content: "더 짧게" },
+    ]);
+    expect(patchesTo("h-new-1").map((c) => c.body)).toEqual([{ output: "초안 글 수정" }]);
+
+    releaseEdited();
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(2));
+    expect(patchesTo("h-new-1").map((c) => c.body)).toEqual([
+      { output: "초안 글 수정" },
+      { output: "짧게 줄인 글" },
+    ]);
+    await advance(5000);
+    expect(patchesTo("h-new-1")).toHaveLength(2);
+  });
+
+  test("고친 글로 다듬기를 직접 입력해 보내도 같다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    backend.generate = () => streamResponse([text("마지막 문단 뺀 글"), done]);
+    await user.type(screen.getByPlaceholderText(refinePlaceholder), "마지막 문단 빼 줘{Enter}");
+    await waitFor(() => expect(resultBox()).toHaveValue("마지막 문단 뺀 글"));
+    const messages = (callsTo("/api/generate", "POST")[1].body as { messages: ChatMessage[] }).messages;
+    expect(messages[1]).toEqual({ role: "assistant", content: "초안 글 수정" });
+  });
+
+  test("다듬기가 실패하면 고친 글로 돌아가고, 다시 시도도 고친 글로 보낸다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    backend.generate = () => json({ error: { message: "잠시 후 다시" } }, 503);
+    await user.click(screen.getByRole("button", { name: "더 짧게" }));
+    await screen.findByText("잠시 후 다시");
+    expect(resultBox()).toHaveValue("초안 글 수정");
+
+    await user.type(resultBox(), "!");
+    backend.generate = () => streamResponse([text("성공한 짧은 글"), done]);
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(resultBox()).toHaveValue("성공한 짧은 글"));
+    const retried = callsTo("/api/generate", "POST")[2];
+    expect((retried.body as { messages: ChatMessage[] }).messages).toEqual([
+      { role: "user", content: "원래 메모" },
+      { role: "assistant", content: "초안 글 수정!" },
+      { role: "user", content: "더 짧게" },
+    ]);
+  });
+
+  test("열어 둔 기록을 지우면 기다리던 저장은 취소되고 다시 만들거나 오류를 내지 않는다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    await user.click(screen.getByRole("button", { name: "기록 삭제" }));
+    await waitFor(() => expect(callsTo("/api/history/h-new-1", "DELETE")).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("아직 기록이 없습니다.")).toBeInTheDocument());
+    await advance(5000);
+
+    expect(patchesTo("h-new-1")).toHaveLength(0);
+    expect(callsTo("/api/history", "POST")).toHaveLength(1);
+    expect(screen.queryByText("저장하지 못했습니다.")).not.toBeInTheDocument();
+    expect(resultBox()).toHaveValue("초안 글 수정");
+  });
+
+  test("다른 기록을 지워도 열어 둔 기록의 기다리던 저장은 그대로 보낸다", async () => {
+    const user = await generatedForEditing({ historyItems: [OTHER()] });
+    await user.type(resultBox(), " 수정");
+    const other = (await screen.findByText("다른 메모")).closest("li");
+    if (!other) throw new Error("li not found");
+    await user.click(within(other).getByRole("button", { name: "기록 삭제" }));
+    await waitFor(() => expect(callsTo("/api/history/h-other", "DELETE")).toHaveLength(1));
+    await advance(1000);
+    await waitFor(() => expect(patchesTo("h-new-1")).toHaveLength(1));
+  });
+
+  test("기다리는 저장이 있을 때 화면이 사라지면 그 기록에 한 번 보내고, 사라진 뒤에는 상태를 바꾸지 않는다", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    const patched = patchesTo("h-new-1");
+    expect(patched).toHaveLength(0);
+    let release: () => void = () => {};
+    backend.patch = () =>
+      new Promise<Response>((resolve) => {
+        release = () => resolve(json({ ...historyItem(), id: "h-new-1", output: "초안 글 수정" }));
+      });
+    screenUnmount();
+    expect(patchesTo("h-new-1")).toHaveLength(1);
+    expect(patchesTo("h-new-1")[0].body).toEqual({ output: "초안 글 수정" });
+    expect(patchesTo("h-new-1")[0].keepalive).toBe(true);
+    await act(async () => {
+      release();
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(patchesTo("h-new-1")).toHaveLength(1);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  test("기다리는 저장이 없으면 화면이 사라질 때 아무것도 보내지 않는다", async () => {
+    await generatedForEditing();
+    const before = calls.length;
+    screenUnmount();
+    expect(calls).toHaveLength(before);
+  });
+
+  test("탭을 닫거나 새로고침하는 순간(pagehide)에도 기다리는 저장을 보낸다", async () => {
+    const user = await generatedForEditing();
+    await user.type(resultBox(), " 수정");
+    fireEvent(window, new Event("pagehide"));
+    expect(patchesTo("h-new-1")).toHaveLength(1);
+    expect(patchesTo("h-new-1")[0].keepalive).toBe(true);
+    await advance(5000);
+    expect(patchesTo("h-new-1")).toHaveLength(1);
   });
 });

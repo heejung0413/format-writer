@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { FormatManager } from "@/components/FormatManager";
 import { HistoryList } from "@/components/HistoryList";
 import { InputPanel } from "@/components/InputPanel";
@@ -14,6 +14,10 @@ import type { ChatMessage, Format, HistoryItem } from "@/lib/types";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const INTERRUPTED = "작성이 중간에 끊겼습니다.";
 const LOAD_FAILED = "저장된 포맷과 기록을 불러오지 못했습니다.";
+const SAVE_DELAY_MS = 1000;
+
+type PendingSave = { id: string; text: string; timer: ReturnType<typeof setTimeout> };
+type SaveStatus = { id: string; ok: boolean };
 
 function fetchSaved(): Promise<[Format[], HistoryItem[]]> {
   return Promise.all([
@@ -37,8 +41,12 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [showManager, setShowManager] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<{ messages: ChatMessage[]; refine: boolean } | null>(null);
+  const pendingSaveRef = useRef<PendingSave | null>(null);
+  const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const mountedRef = useRef(false);
 
   function applyLoaded([formatList, historyList]: [Format[], HistoryItem[]]) {
     setFormats(formatList);
@@ -52,16 +60,92 @@ export default function Home() {
       .catch(() => setError(LOAD_FAILED));
   }, []);
 
-  async function saveHistory(text: string, refine: boolean) {
-    if (refine && historyId) {
-      const res = await fetch(`/api/history/${historyId}`, {
+  const flushOnUnload = useEffectEvent(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingSaveRef.current = null;
+    void fetch(`/api/history/${pending.id}`, {
+      method: "PATCH",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ output: pending.text }),
+      keepalive: true,
+    }).catch(() => {});
+  });
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const onPageHide = () => flushOnUnload();
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener("pagehide", onPageHide);
+      flushOnUnload();
+    };
+  }, []);
+
+  /** 기록 PATCH는 한 줄로 세워 보낸다. 고친 글 저장이 다듬은 결과 저장을 뒤늦게 덮어쓰지 못한다. */
+  function enqueueSave<T>(task: () => Promise<T>): Promise<T> {
+    const next = saveChainRef.current.then(task);
+    saveChainRef.current = next.catch(() => {});
+    return next;
+  }
+
+  function patchOutput(id: string, text: string): Promise<HistoryItem | null> {
+    return enqueueSave(async () => {
+      const res = await fetch(`/api/history/${id}`, {
         method: "PATCH",
         headers: JSON_HEADERS,
         body: JSON.stringify({ output: text }),
       });
-      if (!res.ok) return;
-      const updated = (await res.json()) as HistoryItem;
-      setHistory((list) => list.map((h) => (h.id === updated.id ? updated : h)));
+      return res.ok ? ((await res.json()) as HistoryItem) : null;
+    });
+  }
+
+  function applySaved(updated: HistoryItem) {
+    setHistory((list) => list.map((h) => (h.id === updated.id ? updated : h)));
+  }
+
+  function cancelPendingSave() {
+    if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+    pendingSaveRef.current = null;
+  }
+
+  /** 기다리던 저장을 그 자리에서 보낸다. 결과는 저장하려던 기록(id)에 대해서만 반영한다. */
+  function flushPendingSave() {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    cancelPendingSave();
+    const before = history.find((h) => h.id === pending.id);
+    setHistory((list) => list.map((h) => (h.id === pending.id ? { ...h, output: pending.text } : h)));
+    patchOutput(pending.id, pending.text)
+      .catch(() => null)
+      .then((updated) => {
+        if (!mountedRef.current) return;
+        if (updated) applySaved(updated);
+        else if (before) applySaved(before);
+        setSaveStatus({ id: pending.id, ok: updated !== null });
+      });
+  }
+
+  function editOutput(text: string) {
+    setOutput(text);
+    setMessages((list) => {
+      const last = list[list.length - 1];
+      return last?.role === "assistant" ? [...list.slice(0, -1), { role: "assistant", content: text }] : list;
+    });
+    setSaveStatus(null);
+    cancelPendingSave();
+    if (!historyId || text.trim() === "") return;
+    const id = historyId;
+    const timer = setTimeout(flushPendingSave, SAVE_DELAY_MS);
+    pendingSaveRef.current = { id, text, timer };
+  }
+
+  async function saveHistory(text: string, refine: boolean) {
+    if (refine && historyId) {
+      const updated = await patchOutput(historyId, text);
+      if (updated) applySaved(updated);
       return;
     }
     const format = formats.find((f) => f.id === formatId);
@@ -86,6 +170,8 @@ export default function Home() {
 
   async function run(nextMessages: ChatMessage[], refine: boolean) {
     lastRunRef.current = { messages: nextMessages, refine };
+    flushPendingSave();
+    setSaveStatus(null);
     const previous = output;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -144,6 +230,10 @@ export default function Home() {
 
   function retry() {
     const last = lastRunRef.current;
+    if (last?.refine) {
+      run([...messages, last.messages[last.messages.length - 1]], true);
+      return;
+    }
     if (last) {
       run(last.messages, last.refine);
       return;
@@ -155,6 +245,8 @@ export default function Home() {
   }
 
   function restore(item: HistoryItem) {
+    flushPendingSave();
+    setSaveStatus(null);
     setInput(item.input);
     setOutput(item.output);
     setRecipient(item.recipient);
@@ -173,6 +265,7 @@ export default function Home() {
     const res = await fetch(`/api/history/${id}`, { method: "DELETE" });
     if (!res.ok) return;
     setHistory((list) => list.filter((h) => h.id !== id));
+    if (pendingSaveRef.current?.id === id) cancelPendingSave();
     if (historyId === id) setHistoryId(null);
   }
 
@@ -220,9 +313,12 @@ export default function Home() {
           output={output}
           busy={busy}
           error={error}
+          hasResult={output !== "" || (!busy && messages.length > 0)}
+          saveStatus={saveStatus && saveStatus.id === historyId ? (saveStatus.ok ? "saved" : "failed") : null}
           canRefine={!busy && output !== "" && messages.length > 0}
           onRetry={retry}
           onRefine={refine}
+          onEdit={editOutput}
         />
       </main>
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
