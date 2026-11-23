@@ -80,15 +80,24 @@ docs/superpowers/          설계 문서와 구현 계획
 ## 개발
 
 ```bash
-npm test            # 단위 테스트
 npm run typecheck   # 타입 검사
 npm run lint        # 린트
 npm run build       # 프로덕션 빌드
 ```
 
-테스트는 Claude를 실제로 호출하지 않습니다. 호출 부분은 가짜로 바꿔 검증합니다.
+테스트 실행 방법은 아래 "테스트"를 참고합니다.
 
 기술: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, `@anthropic-ai/sdk`, Vitest.
+
+## 테스트
+
+단위 테스트는 화면 컴포넌트, 서버 라우트, 저장소, Claude 호출 변환 같은 조각을 하나씩 따로 검증합니다. 통합 테스트(`tests/integration/`)는 화면을 실제로 그리고 실제 서버 라우트와 저장소(임시 폴더의 JSON 파일)까지 이어서 돌려, 작성하기부터 기록 저장까지 한 흐름으로 확인합니다. 통합 테스트에서 가짜로 바꾸는 것은 `claude` 프로세스뿐이고, 어느 테스트도 Claude를 실제로 호출하지 않습니다.
+
+```bash
+npm test                  # 단위 + 통합 테스트 전체
+npm run test:integration  # 통합 테스트만
+npm run test:coverage     # 커버리지 포함
+```
 
 ## 알아 둘 점
 
