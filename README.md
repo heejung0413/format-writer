@@ -5,12 +5,19 @@
 ## 실행
 
 ```bash
-cp .env.example .env.local   # ANTHROPIC_API_KEY에 키 입력
 npm install
 npm run dev                  # http://localhost:3000
 ```
 
-API 키는 https://console.anthropic.com 에서 발급합니다.
+기본값은 이 컴퓨터에 로그인된 Claude Code 계정으로 Claude를 호출합니다. 터미널에서 `claude` 명령이 실행되고 로그인돼 있으면 따로 설정할 것이 없습니다. 사용량은 그 계정의 Claude Code 한도에서 나갑니다.
+
+### API 키로 호출하기
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.local`에 `CLAUDE_PROVIDER=api`와 `ANTHROPIC_API_KEY`를 넣고 서버를 다시 시작합니다. 키는 https://console.anthropic.com 에서 발급하며 크레딧 충전이 필요합니다.
 
 ## 쓰는 법
 

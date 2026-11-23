@@ -1,4 +1,4 @@
-import { streamClaude } from "@/lib/claude";
+import { streamClaude } from "@/lib/provider";
 import { RECIPIENTS, TONES } from "@/lib/defaults";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { readJsonBody } from "@/lib/request";

@@ -31,12 +31,12 @@
 |---|---|
 | 프레임워크 | Next.js (App Router) + TypeScript |
 | 스타일 | Tailwind CSS |
-| Claude 호출 | 공식 SDK `@anthropic-ai/sdk`, 서버(API 라우트)에서만 호출 |
+| Claude 호출 | 기본: 이 컴퓨터에 로그인된 Claude Code를 서버가 `claude -p`로 실행. `CLAUDE_PROVIDER=api`면 공식 SDK `@anthropic-ai/sdk`로 호출 |
 | 모델 | `claude-opus-5-5` (환경 변수 `CLAUDE_MODEL`로 교체 가능) |
 | 저장 | 프로젝트 안 `data/formats.json`, `data/history.json` |
 | 테스트 | Vitest |
 
-API 키는 `.env.local`의 `ANTHROPIC_API_KEY`에만 둔다. `.env.local`과 `data/`는 git에 올리지 않는다.
+기본 방식은 키가 필요 없다. API 방식을 쓸 때 키는 `.env.local`의 `ANTHROPIC_API_KEY`에만 둔다. `.env.local`과 `data/`는 git에 올리지 않는다.
 
 ## 4. 화면
 
@@ -126,7 +126,16 @@ type HistoryItem = {
    - `{"type":"error","code":"auth" | "rate_limit" | "refusal" | "api_error","message":"..."}`: Claude 호출 오류나 거절
 6. `done`을 받으면 브라우저가 첫 생성은 `POST /api/history`로 기록을 만들고, 다듬기는 `PATCH /api/history/[id]`로 같은 기록의 `output`을 갱신한다.
 
-### Claude 요청 설정
+### Claude Code 방식 (기본)
+
+- `lib/provider.ts`가 `CLAUDE_PROVIDER` 값으로 호출 방식을 고른다. 값이 `api`가 아니면 `lib/claude-code.ts`를 쓴다.
+- 서버가 `claude -p --output-format stream-json --include-partial-messages`를 임시 폴더에서 실행하고, 글 조각 이벤트를 `text` 줄로 바꿔 흘려보낸다.
+- 도구, 사용자 설정(훅·플러그인), MCP 서버, 세션 저장을 모두 끈다(`--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence`). 지시문은 `--system-prompt`로, 내용은 표준 입력으로 넘긴다.
+- 자식 프로세스에는 `ANTHROPIC_*` 환경 변수를 넘기지 않는다. 넘기면 로그인 계정 대신 API 키로 호출된다.
+- 다듬기는 원문, 작성한 글, 수정 지시를 태그로 묶은 한 덩어리 입력으로 보낸다.
+- 중단하면 자식 프로세스를 끝낸다. `claude` 명령이 없으면 `auth` 오류로 안내한다.
+
+### Claude 요청 설정 (API 방식)
 
 - `model`: `claude-opus-5-5`, `max_tokens`: 64000 (스트리밍)
 - `output_config.effort`: `low` (짧은 글 변환 작업이라 빠른 응답을 우선한다)

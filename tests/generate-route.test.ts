@@ -8,7 +8,7 @@ const calls: { system: string; messages: ChatMessage[]; signal?: AbortSignal }[]
 let lines: StreamLine[] = [];
 let hold = false;
 
-vi.mock("@/lib/claude", () => ({
+vi.mock("@/lib/provider", () => ({
   async *streamClaude(args: { system: string; messages: ChatMessage[]; signal?: AbortSignal }) {
     calls.push({ system: args.system, messages: args.messages, signal: args.signal });
     for (const line of lines) yield line;
